@@ -5,8 +5,11 @@ from jinja2 import Template
 from influx_client import create_influx_client
 import uvicorn
 import threading
+import logging
 
 from typing import Dict
+
+logger = logging.getLogger('limit-service.webserver')
 
 app = FastAPI()
 influx = create_influx_client()
@@ -21,7 +24,7 @@ INDEX_HTML = """
   <body>
 	<h1>Sensor Limits</h1>
 	  <div>
-		<label>Window seconds: <input type="text" name="window_seconds" value="{{ window_seconds }}"/></label>
+		<label>Lookback window in seconds: <input type="text" name="window_seconds" value="{{ window_seconds }}"/></label>
 	  </div>
 	  <hr/>
 	<form method="post" action="/limits">
@@ -68,27 +71,21 @@ async def update_limits(request: Request):
 			updated[key] = 0
 			continue
 
+	if updated:
+		logger.info(f"Updating {len(updated)} sensor limit(s)")
+	else:
+		logger.info("No sensor limits to update")
+
 	# persist updated limits via the influx client's set_sensor_limit (v1) or write
 	for sensor, limit in updated.items():
-		try:
-			if hasattr(influx, 'set_sensor_limit'):
-				influx.set_sensor_limit(sensor, int(limit))
-		except Exception:
-			# ignore persistence errors for now
-			pass
+		influx.set_sensor_limit(sensor, int(limit))
 
 	# window_seconds handling
 	ws = form.get('window_seconds')
 	if isinstance(ws, str) and ws != "":
-		try:
-			ws_val = int(ws)
-			if hasattr(influx, 'set_window_seconds'):
-				try:
-					influx.set_window_seconds(ws_val)
-				except Exception:
-					pass
-		except ValueError:
-			pass
+		ws_val = int(ws)
+		logger.info(f"Updating window_seconds to {ws_val}")
+		influx.set_window_seconds(ws_val)
 
 	return RedirectResponse(url='/', status_code=303)
 
