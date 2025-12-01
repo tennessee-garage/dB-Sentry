@@ -2,7 +2,6 @@ import paho.mqtt.client as mqtt
 import json
 import logging
 from threading import Thread
-from influx_client import create_influx_client
 from config import cfg
 
 logger = logging.getLogger(__name__)
@@ -13,7 +12,6 @@ class MQTTService:
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         self.message_callback = message_callback
-        self.influx = create_influx_client()
         self._running = False
 
     def _on_connect(self, client, userdata, flags, rc):

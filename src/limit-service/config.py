@@ -8,7 +8,7 @@ load_dotenv()
 class Config:
 	mqtt_broker: str = os.getenv("MQTT_BROKER", "localhost")
 	mqtt_port: int = int(os.getenv("MQTT_PORT", "1883"))
-	mqtt_topic: str = os.getenv("MQTT_TOPIC", "sensors/#")
+	mqtt_topic: str = os.getenv("MQTT_TOPIC", "db_sentry/#")
 
 	# InfluxDB v1 settings (preferred if INFLUX_DB is set)
 	influx_host: str = os.getenv("INFLUX_HOST", "localhost")
