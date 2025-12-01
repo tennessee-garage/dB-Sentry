@@ -1,0 +1,101 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Template
+from influx_client import create_influx_client
+import uvicorn
+import threading
+
+from typing import Dict
+
+app = FastAPI()
+influx = create_influx_client()
+
+INDEX_HTML = """
+<!doctype html>
+<html>
+  <head>
+	<meta charset="utf-8">
+	<title>Limit Service</title>
+  </head>
+  <body>
+	<h1>Sensor Limits</h1>
+	  <div>
+		<label>Window seconds: <input type="text" name="window_seconds" value="{{ window_seconds }}"/></label>
+	  </div>
+	  <hr/>
+	<form method="post" action="/limits">
+	  {% if limits %}
+		{% for sensor, value in limits.items() %}
+		  <div>
+			<label>{{ sensor }}: <input type="text" name="{{ sensor }}" value="{{ value }}"/></label>
+		  </div>
+		{% endfor %}
+	  {% else %}
+		<p>No sensor limits configured yet.</p>
+	  {% endif %}
+	  <button type="submit">Save</button>
+	</form>
+  </body>
+</html>
+"""
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+	limits = influx.read_sensor_limits()
+	try:
+		window_seconds = influx.read_window_seconds()
+	except Exception:
+		window_seconds = 30
+	template = Template(INDEX_HTML)
+	return template.render(limits=limits, window_seconds=window_seconds)
+
+@app.post("/limits")
+async def update_limits(request: Request):
+	form = await request.form()
+	# process each form field; treat 'window_seconds' specially
+	updated: Dict[str, int] = {}
+	for key, val in form.items():
+		if val is None or not isinstance(val, str) or val == "":
+			continue
+		if key == 'window_seconds':
+			# handle later
+			continue
+		try:
+			updated[key] = int(val)
+		except ValueError:
+			# ignore invalid numeric entries
+			updated[key] = 0
+			continue
+
+	# persist updated limits via the influx client's set_sensor_limit (v1) or write
+	for sensor, limit in updated.items():
+		try:
+			if hasattr(influx, 'set_sensor_limit'):
+				influx.set_sensor_limit(sensor, int(limit))
+		except Exception:
+			# ignore persistence errors for now
+			pass
+
+	# window_seconds handling
+	ws = form.get('window_seconds')
+	if isinstance(ws, str) and ws != "":
+		try:
+			ws_val = int(ws)
+			if hasattr(influx, 'set_window_seconds'):
+				try:
+					influx.set_window_seconds(ws_val)
+				except Exception:
+					pass
+		except ValueError:
+			pass
+
+	return RedirectResponse(url='/', status_code=303)
+
+def run(host='0.0.0.0', port=8000):
+	uvicorn.run(app, host=host, port=port)
+
+# run in background thread helper
+def run_in_thread(host='0.0.0.0', port=8000):
+	t = threading.Thread(target=run, kwargs={'host':host, 'port':port}, daemon=True)
+	t.start()

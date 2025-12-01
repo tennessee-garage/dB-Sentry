@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+paho-mqtt
+influxdb
+Jinja2
+python-dotenv
+rpi_ws281x; platform_machine=='armv7l' or platform_machine=='aarch64'
