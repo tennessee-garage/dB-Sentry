@@ -28,11 +28,11 @@ def on_message(topic, value):
 	"""Handle incoming MQTT messages. Topic format: db_sentry/$sensor/$band
 	Maintain per-sensor band values and compute the max across bands for LED evaluation.
 	"""
-	logger.info("Received %s = %s; limits=%s", topic, value)
+	logger.info(f"Received message {topic} = {value}")
 	message = create_message(topic, value)
 	
 	if type(message) is not DBAMessage:
-		logger.debug("Topic does not match expected pattern 'db_sentry/$sensor/$band': %s", topic)
+		logger.debug(f"Topic does not match expected pattern 'db_sentry/$sensor/$band': {topic}")
 		return
 
 	with sensor_lock:
