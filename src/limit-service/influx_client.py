@@ -11,10 +11,16 @@ class InfluxV1Client:
 	def __init__(self):
 		if V1Client is None:
 			raise RuntimeError("influxdb package is not available")
+		
+		logger.info(f"Connecting to InfluxV1 client on {cfg.influx_host} with db {cfg.influx_db}")
+
 		self.client = V1Client(host=cfg.influx_host, port=cfg.influx_port,
 								username=cfg.influx_user,
 								password=cfg.influx_password,
 								database=cfg.influx_db)
+		
+		if self.client is None:
+			raise RuntimeError("Could not connect to influxdb")
 
 	def read_sensor_limits(self) -> Dict[str, int]:
 		"""Find the dBA limits currently set (if any) for any sensorss."""

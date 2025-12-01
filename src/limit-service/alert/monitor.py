@@ -1,7 +1,7 @@
 from typing import Dict
 
 from mqtt.dba_message import DBAMessage
-from window import Window
+from alert.window import Window
 
 
 class Monitor:

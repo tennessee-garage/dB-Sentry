@@ -15,13 +15,13 @@ class Config:
 	influx_port: int = int(os.getenv("INFLUX_PORT", "8086"))
 	influx_user: str = os.getenv("INFLUX_USER", "")
 	influx_password: str = os.getenv("INFLUX_PASSWORD", "")
-	influx_db: str = os.getenv("INFLUX_DB", "dba_limits")
+	influx_db: str = os.getenv("INFLUX_DB", "db_sentry")
 
 	# InfluxDB v2 settings (optional)
 	influx_url: str = os.getenv("INFLUX_URL", "http://localhost:8086")
 	influx_token: str = os.getenv("INFLUX_TOKEN", "")
 	influx_org: str = os.getenv("INFLUX_ORG", "")
-	influx_bucket: str = os.getenv("INFLUX_BUCKET", "limits")
+	influx_bucket: str = os.getenv("INFLUX_BUCKET", "db_sentry")
 
 	led_simulate: bool = os.getenv("LED_SIMULATE", "true").lower() in ("1", "true", "yes")
 	led_count: int = int(os.getenv("LED_COUNT", "30"))

@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+python-multipart
 paho-mqtt
 influxdb
 Jinja2
