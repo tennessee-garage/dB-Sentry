@@ -59,11 +59,16 @@ if __name__ == '__main__':
 	logger.info("Starting limit-service")
 	# start webserver
 	run_in_thread(port=8000)
+
 	# start MQTT service
 	mqtt = start_mqtt_service(message_callback=on_message)
+
+	# main loop: check alerts once per second
 	try:
 		while True:
+			check_alerts()
 			time.sleep(1)
+
 	except KeyboardInterrupt:
 		logger.info("Shutting down")
 		mqtt.stop()
