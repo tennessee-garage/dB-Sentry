@@ -44,6 +44,7 @@ def check_alerts():
 
 	for sensor in sensors.keys():
 		if sensor not in sensor_limits:
+			logger.info(f"No limit set for sensor {sensor}, using default {cfg.dba_limit}")
 			influx.set_sensor_limit(sensor, cfg.dba_limit)
 			sensor_limits[sensor] = cfg.dba_limit
 

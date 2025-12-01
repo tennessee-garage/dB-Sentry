@@ -21,4 +21,4 @@ class Window:
 	def average(self) -> int:
 		if not self.dq:
 			return 0
-		return int(sum(self.dq) / len(self.dq))
+		return int(sum(value for _, value in self.dq) / len(self.dq))
