@@ -1,7 +1,10 @@
 from typing import Dict
+import logging
 
 from mqtt.dba_message import DBAMessage
 from alert.window import Window
+
+logger = logging.getLogger('limit-service.alert.monitor')
 
 
 class Monitor:

@@ -1,6 +1,9 @@
 from collections import deque
 import os
 import time
+import logging
+
+logger = logging.getLogger('limit-service.alert.window')
 
 
 class Window:
@@ -21,4 +24,7 @@ class Window:
 	def average(self) -> int:
 		if not self.dq:
 			return 0
-		return int(sum(value for _, value in self.dq) / len(self.dq))
+		
+		average = sum(value for _, value in self.dq) / len(self.dq)
+		logger.debug(f"Average: {average:.2f}; items: {[value for _, value in self.dq]}")
+		return int(average)
