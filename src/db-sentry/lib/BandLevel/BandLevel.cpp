@@ -102,5 +102,32 @@ float BandLevel::computeSmoothedLevel() {
 	float current_level = computeSPLBandLevel();
 	float smoothed_level = _smoothing * _prev_level + (1.0f - _smoothing) * current_level;
 	_prev_level = smoothed_level;
+
+	double lin = pow(10.0, smoothed_level / 10.0);
+	_sumLin += lin;
+	_sampleCount++;
+	if (smoothed_level > _maxDb) {
+		_maxDb = smoothed_level;
+	}
+
 	return smoothed_level;
+}
+
+float BandLevel::leqLevel() {
+	if (_sampleCount == 0) {
+		return -160.0f; // effectively "silence"
+	}
+	double avgLin = _sumLin / (double)_sampleCount;
+	float leqDb = 10.0f * log10f((float)avgLin);
+	return leqDb;
+}
+
+float BandLevel::maxSPLLevel() {
+	return _maxDb;
+}
+
+void BandLevel::resetSPLComputation() {
+	_sumLin = 0.0;
+	_sampleCount = 0;
+	_maxDb = -160.0f;
 }

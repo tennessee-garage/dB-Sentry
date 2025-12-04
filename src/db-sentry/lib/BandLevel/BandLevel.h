@@ -18,6 +18,10 @@ public:
 	float computeBandLevel();
 	float computeSPLBandLevel();
 	float computeSmoothedLevel();
+
+	float leqLevel();
+	float maxSPLLevel();
+	void resetSPLComputation();
 	
 private:	
 	FFTTransform *_fftTransform = nullptr;
@@ -29,6 +33,11 @@ private:
 	uint16_t _fft_bin_count;
 
 	float _prev_level = 0.0f;
+
+	// For SPL computation
+	double _sumLin = 0.0;
+	uint16_t _sampleCount = 0;
+	float _maxDb = -160.0f;
 };
 
 #endif // BANDLEVEL_H
