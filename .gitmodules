@@ -1,0 +1,3 @@
+[submodule "src/db-sentry/lib/embedded-shared"]
+	path = src/db-sentry/lib/embedded-shared
+	url = git@github.com:garthwebb/embedded-shared.git
