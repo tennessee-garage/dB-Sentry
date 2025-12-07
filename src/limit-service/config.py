@@ -28,5 +28,6 @@ class Config:
 	
 	dba_limit: int = int(os.getenv("DBA_LIMIT", "50"))
 	min_triggering_sensors: int = int(os.getenv("MIN_TRIGGERING_SENSORS", 1))
+	warn_percent: float = float(os.getenv("WARN_PERCENT", "0.8"))
 
 cfg = Config()

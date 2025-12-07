@@ -83,6 +83,15 @@ class InfluxV1Client:
 		}]
 		self.client.write_points(point)
 
+	def set_sensor_alarm_state(self, sensor: str, alarm_state: str):
+		"""Set the alarm state for a specific sensor."""
+		point = [{
+			"measurement": "sensor_alarms",
+			"tags": {"sensor": sensor},
+			"fields": {"value": str(alarm_state)}
+		}]
+		self.client.write_points(point)
+
 # Lightweight helper for when Influx is not configured
 class NoopInfluxClient:
 	def __init__(self):
@@ -118,6 +127,10 @@ class NoopInfluxClient:
 			self._window_seconds = int(seconds)
 		except Exception:
 			pass
+
+	def set_sensor_alarm_state(self, sensor: str, alarm_state: str):
+		"""Noop for setting sensor alarm state."""
+		pass
 
 # factory
 def create_influx_client():
