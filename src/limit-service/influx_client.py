@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 from config import cfg
 import logging
 
@@ -22,11 +22,28 @@ class InfluxV1Client:
 		if self.client is None:
 			raise RuntimeError("Could not connect to influxdb")
 
+	def read_active_sensors(self) -> List[str]:
+		"""Find the currently active sensors from the InfluxDB."""
+		try:
+			sensors = []
+			result = self.client.query("SELECT LAST(value) FROM active_sensors GROUP BY sensor")
+			if not isinstance(result, ResultSet):
+				return []
+
+			for measurement, points in result.items():
+				for point in points:
+					sensor = point['last']
+					sensors.append(sensor)
+
+			return sensors
+		except Exception:
+			return []
+
 	def read_sensor_limits(self) -> Dict[str, int]:
 		"""Find the dBA limits currently set (if any) for any sensorss."""
 		try:
 			limits = {}
-			result = self.client.query("SELECT LAST(value) FROM sensor_limits group by sensor")
+			result = self.client.query("SELECT LAST(value) FROM sensor_limits GROUP BY sensor")
 			if not isinstance(result, ResultSet):
 				return {}
 
@@ -75,6 +92,10 @@ class NoopInfluxClient:
 		self._sensor_limits: Dict[str, int] = {}
 		# default window seconds
 		self._window_seconds: int = 30
+
+	def read_active_sensors(self) -> List[str]:
+		"""Find the currently active sensors from the InfluxDB."""
+		return list(self._sensor_limits.keys())	
 
 	def read_sensor_limits(self) -> Dict[str, int]:
 		"""Return currently configured sensor limits."""

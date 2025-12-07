@@ -45,13 +45,24 @@ INDEX_HTML = """
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+	# Fetch the active sensors, and any configured limits.  Merge them to show
+	# the limits for all active sensors, defaulting to zero if there is no limit set.
+	active = influx.read_active_sensors()
 	limits = influx.read_sensor_limits()
+	active_limits: Dict[str, int] = {}
+	
+	for sensor in active:
+		if sensor not in limits:
+			active_limits[sensor] = 0
+		else:
+			active_limits[sensor] = limits[sensor]
+
 	try:
 		window_seconds = influx.read_window_seconds()
 	except Exception:
 		window_seconds = 30
 	template = Template(INDEX_HTML)
-	return template.render(limits=limits, window_seconds=window_seconds)
+	return template.render(limits=active_limits, window_seconds=window_seconds)
 
 @app.post("/limits")
 async def update_limits(request: Request):
