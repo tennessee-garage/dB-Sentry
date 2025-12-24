@@ -1,2 +1,11 @@
 # Ignore the virtual envnironment directory
 venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+.idea
+.vscode
+.DS_Store
+.env
