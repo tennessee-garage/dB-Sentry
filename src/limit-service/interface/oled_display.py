@@ -52,6 +52,8 @@ class OledDisplay:
         Draw up to two lines of text on the display.
         """
         with canvas(self.device) as draw:
+            # Explicitly clear the display
+            draw.rectangle(self.device.bounding_box, outline=0, fill=0)
             if line1:
                 draw.text((4, 4), line1, fill=1)
             if line2:
@@ -151,6 +153,9 @@ class OledDisplay:
                 offset = -offset
             
             with canvas(self.device) as draw:
+                # Explicitly clear the display to prevent ghosting
+                draw.rectangle(self.device.bounding_box, outline=0, fill=0)
+                
                 # Draw current lines shifting out
                 if current_line1:
                     draw.text((4, 4 - offset), current_line1, fill=1)
