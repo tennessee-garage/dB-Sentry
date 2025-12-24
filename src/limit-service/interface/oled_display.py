@@ -8,12 +8,21 @@ from typing import List, Optional
 
 
 class OledDisplay:
-    def __init__(self):
+    def __init__(self, spi_speed_hz: int = 16000000):
+        """
+        Initialize the OLED display.
+        
+        Args:
+            spi_speed_hz: SPI bus speed in Hz (default 16MHz).
+                          Typical range: 8MHz to 32MHz depending on hardware.
+                          Higher speeds = faster screen updates = smoother scrolling.
+        """
         serial = spi(
             port=0,
             device=0,
             gpio_DC=24,
             gpio_RST=25,
+            bus_speed_hz=spi_speed_hz,
         )
 
         self.device = ssd1306(serial, width=128, height=32)
@@ -81,15 +90,17 @@ class OledDisplay:
             line2 = self.lines[self.scroll_index + 1] if self.scroll_index + 1 < len(self.lines) else ""
             self.show_lines(line1, line2)
 
-    def _smooth_scroll_worker(self, direction: str, steps: int = 12, delay: float = 0.02) -> None:
+    def _smooth_scroll_worker(self, direction: str, steps: int = 8, delay: float = 0.01) -> None:
         """
         Worker function that performs smooth scrolling animation with easing.
         Uses ease-in-out curve: starts slow, accelerates in middle, decelerates at end.
         
         Args:
             direction: 'up' or 'down'
-            steps: Number of animation steps (default 12 pixels)
-            delay: Delay between animation frames in seconds
+            steps: Number of animation frames (default 8). Lower = faster animation.
+                   Note: Display SPI refresh (~15-30ms) dominates timing, not delay.
+            delay: Additional delay between frames in seconds (default 0.01).
+                   Values below ~0.015s have minimal effect due to SPI overhead.
         """
         if direction == 'up' and self.scroll_index <= 0:
             self._target_scroll_index = None
