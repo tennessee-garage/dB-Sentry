@@ -1,0 +1,111 @@
+"""Menu system for OLED display.
+
+Handles menu item storage and pre-rendering for optimal performance.
+"""
+import time
+import logging
+from typing import List, Dict, Tuple, Optional
+from PIL import Image, ImageDraw
+
+logger = logging.getLogger(__name__)
+
+
+class Menu:
+    """Represents a menu with pre-rendered display frames."""
+    
+    def __init__(self, items: List[str], display_width: int = 128, display_height: int = 32):
+        """
+        Initialize a menu with items and pre-render all display frames.
+        
+        Args:
+            items: List of menu item strings
+            display_width: Width of the display in pixels (default 128)
+            display_height: Height of the display in pixels (default 32)
+        """
+        self.items = items
+        self.display_width = display_width
+        self.display_height = display_height
+        
+        # Pre-rendered frame buffers for all possible two-line combinations
+        # Key is (line1, line2, cursor_line) tuple, value is the rendered Image
+        self._frame_cache: Dict[Tuple[str, str, Optional[int]], Image.Image] = {}
+        
+        # Pre-render all frames
+        self._prerender_frames()
+    
+    def _prerender_frames(self) -> None:
+        """Pre-render all possible frame buffers for the menu."""
+        logger.info(f"Pre-rendering {len(self.items)} menu items...")
+        start_time = time.perf_counter()
+        
+        # Pre-render all possible two-line combinations with all cursor positions
+        for i in range(len(self.items)):
+            line1 = self.items[i] if i < len(self.items) else ""
+            line2 = self.items[i + 1] if i + 1 < len(self.items) else ""
+            
+            # Pre-render with cursor on line 1, line 2, and no cursor
+            for cursor_line in [0, 1, None]:
+                frame_key = (line1, line2, cursor_line)
+                if frame_key in self._frame_cache:
+                    continue
+                
+                # Create a full frame with these two lines
+                frame = Image.new('1', (self.display_width, self.display_height), 0)
+                draw = ImageDraw.Draw(frame)
+                
+                if line1:
+                    prefix1 = "> " if cursor_line == 0 else "  "
+                    draw.text((4, 4), prefix1 + line1, fill=1)
+                if line2:
+                    prefix2 = "> " if cursor_line == 1 else "  "
+                    draw.text((4, 16), prefix2 + line2, fill=1)
+                
+                # Cache the complete frame
+                self._frame_cache[frame_key] = frame
+        
+        elapsed = time.perf_counter() - start_time
+        logger.info(f"Pre-rendered {len(self._frame_cache)} frames in {elapsed*1000:.1f}ms")
+    
+    def get_frame(self, line1: str, line2: str, cursor_line: Optional[int] = None) -> Optional[Image.Image]:
+        """
+        Get a pre-rendered frame for the given two lines with optional cursor.
+        
+        Args:
+            line1: First line of text
+            line2: Second line of text
+            cursor_line: Which line has the cursor (0=first, 1=second, None=no cursor)
+            
+        Returns:
+            Pre-rendered PIL Image, or None if not cached
+        """
+        return self._frame_cache.get((line1, line2, cursor_line))
+    
+    def has_frame(self, line1: str, line2: str, cursor_line: Optional[int] = None) -> bool:
+        """
+        Check if a frame is cached for the given two lines with cursor position.
+        
+        Args:
+            line1: First line of text
+            line2: Second line of text
+            cursor_line: Which line has the cursor (0=first, 1=second, None=no cursor)
+            
+        Returns:
+            True if frame is cached
+        """
+        return (line1, line2, cursor_line) in self._frame_cache
+    
+    def get_item(self, index: int) -> str:
+        """
+        Get a menu item by index.
+        
+        Args:
+            index: Index of the menu item
+            
+        Returns:
+            Menu item string, or empty string if index out of range
+        """
+        return self.items[index] if 0 <= index < len(self.items) else ""
+    
+    def __len__(self) -> int:
+        """Return the number of menu items."""
+        return len(self.items)

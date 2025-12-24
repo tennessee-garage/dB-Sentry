@@ -6,18 +6,23 @@ This script demonstrates the smooth scrolling features by loading
 """
 import sys
 import time
+import logging
 from pathlib import Path
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from interface.oled_display import OledDisplay
+from interface.menu import Menu
+
+# Enable logging to see timing info
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 
 def main():
     """Test the OLED display scrolling with menu items."""
     print("Initializing OLED display...")
-    oled = OledDisplay()
+    oled = OledDisplay(spi_speed_hz=32000000)
     
     # Create a menu with 8 items
     menu_items = [
@@ -31,8 +36,12 @@ def main():
         "8. About",
     ]
     
-    print(f"Loading {len(menu_items)} menu items...")
-    oled.set_lines(menu_items)
+    print(f"Creating menu with {len(menu_items)} items...")
+    menu = Menu(menu_items)
+    
+    # Load the menu into the display
+    print("Loading menu into display...")
+    oled.load_menu(menu)
     
     print("Display shows first two items")
     time.sleep(2)
@@ -59,7 +68,7 @@ def main():
     time.sleep(2)
     
     # Demonstrate rapid scrolling (interrupting animations)
-    print("\nDemonstrating rapid scroll changes...")
+    print("\nTesting rapid scroll changes...")
     print("  Quick down-down-down-up-up sequence:")
     oled.scroll_down_smooth()
     time.sleep(0.3)

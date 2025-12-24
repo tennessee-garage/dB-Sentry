@@ -30,8 +30,9 @@ class Config:
 	min_triggering_sensors: int = int(os.getenv("MIN_TRIGGERING_SENSORS", 1))
 	warn_percent: float = float(os.getenv("WARN_PERCENT", "0.8"))
 
-	encoder_data_pin: int = int(os.getenv("ENCODER_DATA_PIN", "3"))
-	encoder_clock_pin: int = int(os.getenv("ENCODER_CLOCK_PIN", "5"))
-	encoder_button_pin: int = int(os.getenv("ENCODER_BUTTON_PIN", "7"))
+	# Note that these use BCM GPIO pin numbers e.g. GPIO19 will be 19 here.
+	encoder_data_pin: int = int(os.getenv("ENCODER_DATA_PIN", "13"))
+	encoder_clock_pin: int = int(os.getenv("ENCODER_CLOCK_PIN", "19"))
+	encoder_button_pin: int = int(os.getenv("ENCODER_BUTTON_PIN", "26"))
 
 cfg = Config()
