@@ -5,4 +5,7 @@ paho-mqtt
 influxdb
 Jinja2
 python-dotenv
+luma.oled
+RPi.GPIO
+spidev
 rpi_ws281x; platform_machine=='armv7l' or platform_machine=='aarch64'
