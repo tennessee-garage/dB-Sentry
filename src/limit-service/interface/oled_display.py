@@ -33,8 +33,15 @@ class OledDisplay:
         self._target_scroll_index: Optional[int] = None
 
         # --- SSD1305-specific quirks ---
-        # COM pins config
+        # COM pins config - hardware-dependent
         self.device.command(0xDA, 0x12)
+        
+        # Try adjusting precharge and VCOMH deselect level to reduce ghosting
+        # Precharge period (0xD9): Phase 1: 1 clock, Phase 2: 15 clocks
+        self.device.command(0xD9, 0xF1)
+        
+        # VCOMH deselect level (0xDB): ~0.77*Vcc to reduce ghosting
+        self.device.command(0xDB, 0x30)
 
         # Shift visible window right a bit
         try:
@@ -44,7 +51,8 @@ class OledDisplay:
             pass
         # -------------------------------
 
-        self.device.contrast(255)
+        # Reduce contrast to minimize ghosting (was 255)
+        self.device.contrast(180)
         self.device.clear()
 
     def show_lines(self, line1: str = "", line2: str = ""):
