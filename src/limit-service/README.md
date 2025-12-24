@@ -36,7 +36,46 @@ LED_COUNT=30
 python main.py
 ```
 
-4. Or run as a systemd service (example unit provided in README).
+## Running as a systemd service
+
+To run the service automatically on boot:
+
+1. Install the service:
+
+```bash
+# Copy the service file to systemd
+sudo cp db-sentry-limit-service.service /etc/systemd/system/
+
+# Reload systemd to recognize the new service
+sudo systemctl daemon-reload
+
+# Enable the service to start on boot
+sudo systemctl enable db-sentry-limit-service
+
+# Start the service now
+sudo systemctl start db-sentry-limit-service
+```
+
+2. Managing the service:
+
+```bash
+# Check status
+sudo systemctl status db-sentry-limit-service
+
+# View logs
+sudo journalctl -u db-sentry-limit-service -f
+
+# Stop the service
+sudo systemctl stop db-sentry-limit-service
+
+# Restart the service
+sudo systemctl restart db-sentry-limit-service
+
+# Disable auto-start on boot
+sudo systemctl disable db-sentry-limit-service
+```
+
+**Note:** Make sure to update the `User`, `Group`, `WorkingDirectory`, and `ExecStart` paths in `db-sentry-limit-service.service` to match your system configuration before installing.
 
 Files of interest
 - `main.py` - entrypoint that starts MQTT, Influx and the web server.
