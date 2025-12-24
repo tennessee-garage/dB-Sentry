@@ -44,7 +44,7 @@ To run the service automatically on boot:
 
 ```bash
 # Copy the service file to systemd
-sudo cp db-sentry-limit-service.service /etc/systemd/system/
+sudo cp db-sentry-limit.service /etc/systemd/system/
 
 # Reload systemd to recognize the new service
 sudo systemctl daemon-reload
@@ -75,7 +75,7 @@ sudo systemctl restart db-sentry-limit-service
 sudo systemctl disable db-sentry-limit-service
 ```
 
-**Note:** Make sure to update the `User`, `Group`, `WorkingDirectory`, and `ExecStart` paths in `db-sentry-limit-service.service` to match your system configuration before installing.
+**Note:** Make sure to update the `User`, `Group`, `WorkingDirectory`, and `ExecStart` paths in `db-sentry-limit.service` to match your system configuration before installing.
 
 Files of interest
 - `main.py` - entrypoint that starts MQTT, Influx and the web server.
