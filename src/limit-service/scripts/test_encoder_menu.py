@@ -9,7 +9,6 @@ import time
 import logging
 from pathlib import Path
 import signal
-import os
 
 # Get the absolute path to the parent directory (limit-service)
 script_dir = Path(__file__).resolve().parent
@@ -132,7 +131,7 @@ class EncoderMenuController:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.cleanup()
-
+            sys.exit(0)
 
 def main():
     """Main entry point."""
