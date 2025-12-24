@@ -50,29 +50,29 @@ sudo cp db-sentry-limit.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # Enable the service to start on boot
-sudo systemctl enable db-sentry-limit-service
+sudo systemctl enable db-sentry-limit
 
 # Start the service now
-sudo systemctl start db-sentry-limit-service
+sudo systemctl start db-sentry-limit
 ```
 
 2. Managing the service:
 
 ```bash
 # Check status
-sudo systemctl status db-sentry-limit-service
+sudo systemctl status db-sentry-limit
 
 # View logs
-sudo journalctl -u db-sentry-limit-service -f
+sudo journalctl -u db-sentry-limit -f
 
 # Stop the service
-sudo systemctl stop db-sentry-limit-service
+sudo systemctl stop db-sentry-limit
 
 # Restart the service
-sudo systemctl restart db-sentry-limit-service
+sudo systemctl restart db-sentry-limit
 
 # Disable auto-start on boot
-sudo systemctl disable db-sentry-limit-service
+sudo systemctl disable db-sentry-limit
 ```
 
 **Note:** Make sure to update the `User`, `Group`, `WorkingDirectory`, and `ExecStart` paths in `db-sentry-limit.service` to match your system configuration before installing.
