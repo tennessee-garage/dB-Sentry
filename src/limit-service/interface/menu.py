@@ -28,7 +28,7 @@ class Menu:
         
         # Pre-rendered frame buffers for all possible two-line combinations
         # Key is (line1, line2, cursor_line) tuple, value is the rendered Image
-        self._frame_cache: Dict[Tuple[str, str, Optional[int]], Image.Image] = {}
+        self._frame_cache: Dict[Tuple[int, Optional[int]], Image.Image] = {}
         
         # Pre-render all frames
         self._prerender_frames()
@@ -39,13 +39,13 @@ class Menu:
         start_time = time.perf_counter()
         
         # Pre-render all possible two-line combinations with all cursor positions
-        for i in range(len(self.items)):
-            line1 = self.items[i] if i < len(self.items) else ""
-            line2 = self.items[i + 1] if i + 1 < len(self.items) else ""
+        for scroll_index in range(len(self.items)):
+            line1 = self.items[scroll_index] if scroll_index < len(self.items) else ""
+            line2 = self.items[scroll_index + 1] if scroll_index + 1 < len(self.items) else ""
             
             # Pre-render with cursor on line 1, line 2, and no cursor
             for cursor_line in [0, 1, None]:
-                frame_key = (line1, line2, cursor_line)
+                frame_key = (scroll_index, cursor_line)
                 if frame_key in self._frame_cache:
                     continue
                 
@@ -66,21 +66,20 @@ class Menu:
         elapsed = time.perf_counter() - start_time
         logger.info(f"Pre-rendered {len(self._frame_cache)} frames in {elapsed*1000:.1f}ms")
     
-    def get_frame(self, line1: str, line2: str, cursor_line: Optional[int] = None) -> Optional[Image.Image]:
+    def get_frame(self, scroll_index: int, cursor_line: Optional[int] = None) -> Optional[Image.Image]:
         """
         Get a pre-rendered frame for the given two lines with optional cursor.
         
         Args:
-            line1: First line of text
-            line2: Second line of text
+            scroll_index: Index of the first line in the menu
             cursor_line: Which line has the cursor (0=first, 1=second, None=no cursor)
             
         Returns:
             Pre-rendered PIL Image, or None if not cached
         """
-        return self._frame_cache.get((line1, line2, cursor_line))
+        return self._frame_cache.get((scroll_index, cursor_line))
     
-    def has_frame(self, line1: str, line2: str, cursor_line: Optional[int] = None) -> bool:
+    def has_frame(self, scroll_index: int, cursor_line: Optional[int] = None) -> bool:
         """
         Check if a frame is cached for the given two lines with cursor position.
         
@@ -92,7 +91,7 @@ class Menu:
         Returns:
             True if frame is cached
         """
-        return (line1, line2, cursor_line) in self._frame_cache
+        return (scroll_index, cursor_line) in self._frame_cache
     
     def get_item(self, index: int) -> str:
         """
