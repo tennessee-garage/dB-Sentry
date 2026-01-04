@@ -13,11 +13,17 @@
 #include "FFTTransform.h"
 #include "BandLevel.h"
 
+#include "StatusLED.h"
+
 // ---------- CONFIG ----------
 
 const int I2S_WS_PIN  = D2;   // LRCLK / WS
 const int I2S_SCK_PIN = D1;   // BCLK / SCK
 const int I2S_SD_PIN  = D0;   // SD (data from mic)
+
+const int LED_STATUS_PIN = D3;  // On-board LED
+const int LED_DATA_PIN   = D5;  // Additional LED for data activity
+const int LED_ALERT_PIN  = D4;  // Additional LED for alerts
 
 // ---------- OBJECTS ----------
 
@@ -31,17 +37,39 @@ BandLevel *bassBand = nullptr;
 BandLevel *midBand = nullptr;
 BandLevel *trebleBand = nullptr;
 
+StatusLED *statusLED = nullptr;
+
 // ---------- SETUP ----------
 void setup() {
     Serial.begin(115200);
     delay(200);
     Serial.println("Starting I2S + FFT test…");
 
+    statusLED = new StatusLED(LED_STATUS_PIN, LED_DATA_PIN, LED_ALERT_PIN);
+    statusLED->begin();
+
+    // Run through all the LEDs to test them
+    statusLED->blinkOnceBlocking(StatusLED::STATUS, 500);
+    statusLED->blinkOnceBlocking(StatusLED::DATA, 500);
+    statusLED->blinkOnceBlocking(StatusLED::ALERT, 500);
+
+    // Start a slow blink during WiFi setup
+    statusLED->blinkContinuous(StatusLED::STATUS, 100, 500);
+
     LOGGER = new Logger();
     LOGGER->init(SYSLOG_SERVER, SYSLOG_PORT, HOSTNAME, APP_NAME);
 
     const char *creds[] = WIFI_CREDENTIALS_LIST;
     WirelessControl::init_wifi_from_list(creds, HOSTNAME);
+
+    if (!WirelessControl::is_connected) {
+        // Fast blink on alert LED
+        statusLED->blinkContinuous(StatusLED::ALERT, 100, 100);
+        // Fatal error, halt here
+        while (1);
+    }
+
+    statusLED->on(StatusLED::STATUS); // Solid ON when WiFi connected
 
     mqtt = new MQTT(MQTT_SERVER);
 
@@ -70,6 +98,8 @@ void loop() {
 
     uint32_t now = millis();
     if (now - lastReportMs >= LEQ_INTERVAL_MS) {
+        statusLED->blinkOnce(StatusLED::DATA, 50); // Blink data LED on report
+
         // Report LEQ and max levels to InfluxDB
         mqtt->publishBandLevel("bass",   bassBand->leqLevel());
         mqtt->publishBandLevel("mid",    midBand->leqLevel());
