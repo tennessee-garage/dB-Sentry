@@ -9,10 +9,10 @@ sudo systemctl enable --now pigpiod
 
 echo "==> Setting up virtualenv..."
 python3 -m venv venv --system-site-packages
-source .venv/bin/activate
+source venv/bin/activate
 
 echo "==> Installing Python deps..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "Done. Activate with: source .venv/bin/activate"
+echo "Done. Activate with: source venv/bin/activate"
