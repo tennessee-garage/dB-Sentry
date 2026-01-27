@@ -91,6 +91,8 @@ class DynamicMenu:
         }
         
         # Initialize and display first menu
+        self.display.scroll_index = 0
+        self.display.cursor_position = 0
         self._refresh_current_menu()
         self._start_refresh_thread()
     
@@ -369,6 +371,9 @@ class DynamicMenu:
         """
         self.menu_stack.append(menu_name)
         self.current_menu_name = menu_name
+        # Reset display position when entering a new menu
+        self.display.scroll_index = 0
+        self.display.cursor_position = 0
         self._refresh_current_menu()
     
     def _navigate_back(self):
@@ -376,6 +381,9 @@ class DynamicMenu:
         if len(self.menu_stack) > 1:
             self.menu_stack.pop()
             self.current_menu_name = self.menu_stack[-1]
+            # Reset display position when going back
+            self.display.scroll_index = 0
+            self.display.cursor_position = 0
             self._refresh_current_menu()
     
     def _handle_checkbox(self, item: Dict):

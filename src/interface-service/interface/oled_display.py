@@ -161,15 +161,20 @@ class OledDisplay:
         if not self.current_menu:
             return
         
-        if self.cursor_position == 0 and len(self.current_menu) > self.scroll_index + 1:
+        total_items = len(self.current_menu)
+        current_selected = self.scroll_index + self.cursor_position
+        
+        # Don't go past the last item
+        if current_selected >= total_items - 1:
+            return
+        
+        if self.cursor_position == 0:
             # Move cursor to second line
             self.cursor_position = 1
-        elif self.cursor_position == 1 and len(self.current_menu) > self.scroll_index + 2:
-            # Scroll down, keep cursor on second line
-            self.scroll_index += 1
-        else:
-            # Do nothing if we've hit a boundary
-            return
+        elif self.cursor_position == 1:
+            # Scroll down if there are more items below
+            if self.scroll_index + 2 < total_items:
+                self.scroll_index += 1
         
         self._display_current_menu()
     
