@@ -5,6 +5,7 @@ from luma.core.render import canvas
 import time
 import logging
 from typing import List, Optional, Dict
+from gpiozero import OutputDevice
 
 from .menu import Menu
 
@@ -12,20 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 class OledDisplay:
+    DEFAULT_DC_PIN = 24
+    DEFAULT_RST_PIN = 25
+
     def __init__(self, contrast: int = 180, spi_speed_hz: int = 16000000):
         """
         Initialize the OLED display.
         
         Args:
+            contrast: Display contrast level (0-255, default 180)
             spi_speed_hz: SPI bus speed in Hz (default 16MHz).
                           Typical range: 8MHz to 32MHz depending on hardware.
                           Higher speeds = faster screen updates = smoother scrolling.
         """
+
+        self.screen_reset()
+        
         serial = spi(
             port=0,
             device=0,
-            gpio_DC=24,
-            gpio_RST=25,
+            gpio_DC=self.DEFAULT_DC_PIN,
+            gpio_RST=self.DEFAULT_RST_PIN,
             bus_speed_hz=spi_speed_hz,
         )
         self.device = ssd1306(serial, width=128, height=32, mode=1)
@@ -40,6 +48,19 @@ class OledDisplay:
         self.current_menu: Optional[Menu] = None
         self.scroll_index: int = 0
         self.cursor_position: int = 0  # Which line (0 or 1) has the cursor
+        self.rotation: int = 0  # 0 or 180 degrees
+
+    def screen_reset(self) -> None:
+        """
+        Reset the OLED display via GPIO. In theory the ssd1306 class does this, but
+        in practice it seems to need this or the screen does not light up.
+        """
+        rst_pin = OutputDevice(self.DEFAULT_RST_PIN)
+        rst_pin.off()  # Pull low (reset)
+        time.sleep(0.01)  # 10ms
+        rst_pin.on()   # Pull high (out of reset)
+        time.sleep(0.1)  # 100ms for display to stabilize
+        rst_pin.close()
 
     def set_contrast(self, contrast: int) -> None:
         """
@@ -52,6 +73,40 @@ class OledDisplay:
             raise ValueError("Contrast must be between 0 and 255")
 
         self.device.contrast(contrast)
+    
+    def set_rotation(self, degrees: int) -> None:
+        """
+        Set display rotation.
+        
+        Args:
+            degrees: Rotation in degrees (0 or 180)
+        """
+        if degrees not in [0, 180]:
+            raise ValueError("Rotation must be 0 or 180 degrees")
+        
+        self.rotation = degrees
+        
+        # SSD1306 command for segment remap and COM scan direction
+        if degrees == 0:
+            # Normal orientation (knob on left)
+            self.device.command(0xA0)  # Column address 0 is mapped to SEG0
+            self.device.command(0xC0)  # Normal COM scan direction
+        else:
+            # Rotated 180 degrees (knob on right)
+            self.device.command(0xA1)  # Column address 127 is mapped to SEG0
+            self.device.command(0xC8)  # Remapped COM scan direction
+        
+        # Redraw current display
+        if self.current_menu:
+            self._display_current_menu()
+    
+    def get_rotation(self) -> int:
+        """Get current display rotation in degrees.
+        
+        Returns:
+            Current rotation (0 or 180)
+        """
+        return self.rotation
 
     def show_lines(self, line1: str = "", line2: str = ""):
         """

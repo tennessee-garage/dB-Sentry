@@ -33,6 +33,7 @@ class LEDController:
     def __init__(self):
         self.simulate: bool = cfg.led_simulate or (not _HAVE_RPI_WS281X)
         self.count: int = cfg.led_count
+        self.brightness: int = 255  # Default full brightness
         # hardware objects (only set when real hardware is available)
         self.strip: Optional[Any] = None
         self.Color: Optional[Any] = None
@@ -54,7 +55,13 @@ class LEDController:
 
         When simulating, the action is logged. When running with hardware,
         the method validates the hardware objects before calling into them.
+        Colors are adjusted by current brightness level.
         """
+        # Apply brightness scaling
+        r = int(r * self.brightness / 255)
+        g = int(g * self.brightness / 255)
+        b = int(b * self.brightness / 255)
+        
         if self.simulate:
             logger.info("LEDs set to R=%d G=%d B=%d (simulated)", r, g, b)
             return
@@ -79,6 +86,26 @@ class LEDController:
                 self.strip.show()
             except Exception:
                 logger.exception("Failed to show strip; ignoring")
+
+    def set_brightness(self, level: int):
+        """Set LED brightness level (0-255).
+        
+        Args:
+            level: Brightness level from 0 (off) to 255 (full brightness)
+        """
+        self.brightness = max(0, min(255, level))
+        if self.simulate:
+            logger.info("LED brightness set to %d (simulated)", self.brightness)
+        else:
+            logger.info("LED brightness set to %d", self.brightness)
+    
+    def get_brightness(self) -> int:
+        """Get current LED brightness level (0-255).
+        
+        Returns:
+            Current brightness level
+        """
+        return self.brightness
 
     def set_by_value(self, value: float, limits: dict):
         """Simple evaluation: if value < low -> green, between low/mid -> yellow, > high -> red."""

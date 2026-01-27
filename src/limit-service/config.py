@@ -31,8 +31,8 @@ class Config:
 	warn_percent: float = float(os.getenv("WARN_PERCENT", "0.8"))
 
 	# Note that these use BCM GPIO pin numbers e.g. GPIO19 will be 19 here.
-	encoder_data_pin: int = int(os.getenv("ENCODER_DATA_PIN", "13"))
-	encoder_clock_pin: int = int(os.getenv("ENCODER_CLOCK_PIN", "19"))
+	encoder_data_pin: int = int(os.getenv("ENCODER_DATA_PIN", "19"))
+	encoder_clock_pin: int = int(os.getenv("ENCODER_CLOCK_PIN", "13"))
 	encoder_button_pin: int = int(os.getenv("ENCODER_BUTTON_PIN", "26"))
 
 cfg = Config()

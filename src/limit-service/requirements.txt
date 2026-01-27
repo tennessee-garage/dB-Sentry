@@ -5,6 +5,7 @@ paho-mqtt
 influxdb
 Jinja2
 python-dotenv
+pyyaml
 luma.oled
 RPi.GPIO
 spidev
