@@ -1,0 +1,7 @@
+python-dotenv
+pyyaml
+luma.oled
+gpiozero
+RPi.GPIO
+spidev
+rpi_ws281x; platform_machine=='armv7l' or platform_machine=='aarch64'

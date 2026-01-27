@@ -1,0 +1,36 @@
+# Menu configuration for dynamic OLED interface
+
+menus:
+  main:
+    items:
+      - { text: "Status", type: "submenu", submenu: "status" }
+      - { text: "Settings", type: "submenu", submenu: "settings" }
+      - { text: "About", type: "submenu", submenu: "about" }
+
+  status:
+    items:
+      - { text: "WiFi: {wifi_ssid}", type: "dynamic", function: "get_wifi_ssid", refresh: 10 }
+      - { text: "IP: {ip_address}", type: "dynamic", function: "get_ip_address", refresh: 10 }
+      - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 10 }
+      - { text: "Service: {service_status}", type: "dynamic", function: "get_service_status", refresh: 10 }
+      - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 10 }
+      - { text: "Back", type: "back" }
+
+  settings:
+    items:
+      - { text: "Orientation", type: "submenu", submenu: "orientation" }
+      - { text: "Display brightness: {display_brightness}", type: "editable", function: "set_display_brightness", min: 0, max: 255 }
+      - { text: "LED brightness: {led_brightness}", type: "editable", function: "set_led_brightness", min: 0, max: 255 }
+      - { text: "Back", type: "back" }
+
+  orientation:
+    items:
+      - { text: "Knob left {orientation_left_check}", type: "checkbox", group: "orientation", value: "left", function: "set_orientation_left" }
+      - { text: "Knob right {orientation_right_check}", type: "checkbox", group: "orientation", value: "right", function: "set_orientation_right" }
+      - { text: "Back", type: "back" }
+
+  about:
+    items:
+      - { text: "dB Sentry", type: "static" }
+      - { text: "Limit Service UI", type: "static" }
+      - { text: "Back", type: "back" }
