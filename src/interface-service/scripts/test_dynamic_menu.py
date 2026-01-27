@@ -57,10 +57,9 @@ class DynamicMenuDemo:
         logger.info("Dynamic menu initialized")
         
         # Initialize encoder
-        self.encoder = EncoderControl(
-            on_rotate=self.on_encoder_rotate,
-            on_button=self.on_encoder_button
-        )
+        self.encoder = EncoderControl()
+        self.encoder.register_rotate_callback(self.on_encoder_rotate)
+        self.encoder.register_button_callback(self.on_encoder_button)
         logger.info("Encoder initialized")
         
         # Set up signal handler for clean shutdown
@@ -72,11 +71,12 @@ class DynamicMenuDemo:
         logger.info("- Press: Select item, enter submenus, or save edits")
         logger.info("- Display will sleep after 60 seconds of inactivity")
     
-    def on_encoder_rotate(self, delta: int):
+    def on_encoder_rotate(self, delta: int, steps: int):
         """Handle encoder rotation.
         
         Args:
             delta: Rotation delta (+/- for direction)
+            steps: Current encoder step position
         """
         logger.debug(f"Encoder rotated: {delta}")
         self.menu.encoder_rotated(delta)
