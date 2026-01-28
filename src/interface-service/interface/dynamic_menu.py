@@ -67,7 +67,7 @@ class DynamicMenu:
         self.edit_config: Dict = {}
         
         # Refresh thread state
-        self.refresh_lock = threading.Lock()
+        self.refresh_lock = threading.RLock()  # Use RLock for reentrant locking
         self.refresh_thread: Optional[threading.Thread] = None
         self.stop_refresh = threading.Event()
         self.last_activity = time.time()
@@ -90,11 +90,30 @@ class DynamicMenu:
             "set_led_brightness": self._set_led_brightness,
         }
         
+        # Apply saved user settings on startup
+        self._apply_startup_settings()
+        
         # Initialize and display first menu
         self.display.scroll_index = 0
         self.display.cursor_position = 0
         self._refresh_current_menu()
         self._start_refresh_thread()
+    
+    def _apply_startup_settings(self):
+        """Apply saved user settings on startup."""
+        # Apply display brightness
+        brightness = user_settings.get_display_brightness()
+        self.display.set_contrast(brightness)
+        
+        # Apply LED brightness
+        if self.led_controller:
+            led_brightness = user_settings.get_led_brightness()
+            self.led_controller.set_brightness(led_brightness)
+        
+        # Apply orientation
+        orientation = user_settings.get("orientation", "left")
+        rotation = 180 if orientation == "left" else 0
+        self.display.set_rotation(rotation)
     
     def _wake_display(self):
         """Wake display from sleep and reset inactivity timer."""
@@ -204,6 +223,10 @@ class DynamicMenu:
                 else:
                     text = text.replace("{led_brightness}", str(value))
         
+        elif item_type == "brightness_bar":
+            # Don't show value in menu, just the label
+            pass
+        
         return text
     
     def _get_current_menu_config(self) -> Dict:
@@ -214,14 +237,22 @@ class DynamicMenu:
         """
         return self.config["menus"].get(self.current_menu_name, {})
     
-    def _refresh_current_menu(self):
-        """Refresh and display the current menu."""
+    def _refresh_current_menu(self, preserve_position: bool = False):
+        """Refresh and display the current menu.
+        
+        Args:
+            preserve_position: If True, keep current scroll/cursor position
+        """
         with self.refresh_lock:
             if self.display_sleeping:
                 return
             
             menu_config = self._get_current_menu_config()
             items = menu_config.get("items", [])
+            
+            # Save current position if preserving
+            saved_scroll = self.display.scroll_index if preserve_position else 0
+            saved_cursor = self.display.cursor_position if preserve_position else 0
             
             # Refresh dynamic items on navigate
             for item in items:
@@ -236,7 +267,18 @@ class DynamicMenu:
             
             # Create static Menu for display
             menu = Menu(menu_texts)
-            self.display.load_menu(menu)
+            
+            # Set menu and position, then display once
+            self.display.current_menu = menu
+            if preserve_position:
+                self.display.scroll_index = saved_scroll
+                self.display.cursor_position = saved_cursor
+            else:
+                self.display.scroll_index = 0
+                self.display.cursor_position = 0
+            
+            # Display the menu at the correct position
+            self.display._display_current_menu()
     
     def _start_refresh_thread(self):
         """Start background thread for timed menu refreshes."""
@@ -267,8 +309,7 @@ class DynamicMenu:
                     
                     # Refresh display if any items changed
                     if needs_refresh:
-                        with self.refresh_lock:
-                            self._refresh_current_menu()
+                        self._refresh_current_menu(preserve_position=True)
                 
                 # Sleep briefly to avoid busy-waiting
                 time.sleep(0.1)
@@ -305,19 +346,42 @@ class DynamicMenu:
         self._wake_display()
         
         if self.edit_mode:
-            # Adjust edit value
-            step = 1 if abs(delta) == 1 else 5  # Larger steps for faster rotation
-            self.edit_value += (step if delta > 0 else -step)
+            # Calculate step size based on bar width for brightness_bar mode
+            if self.edit_config.get("type") == "brightness_bar":
+                # Make each encoder step = 1 pixel change on the bar
+                bar_width = 110  # Must match _render_brightness_bar
+                min_val = self.edit_config.get("min", 0)
+                max_val = self.edit_config.get("max", 255)
+                step = (max_val - min_val) / bar_width  # Each step = 1 pixel
+            else:
+                # Standard edit mode uses smaller steps
+                step = 1 if abs(delta) == 1 else 5
+            
+            old_value = self.edit_value
+            self.edit_value += (step if delta < 0 else -step)
             
             # Clamp to min/max
             self.edit_value = max(
                 self.edit_config.get("min", 0),
                 min(self.edit_config.get("max", 255), self.edit_value)
             )
+            # Round to nearest integer for brightness values
+            self.edit_value = int(round(self.edit_value))
             
-            # Refresh display
-            with self.refresh_lock:
-                self._refresh_current_menu()
+            # Apply display brightness in real-time for immediate feedback
+            func_name = self.edit_config.get("function", "")
+            if "display_brightness" in func_name:
+                # Remap 0-255 to 5-255 for actual hardware effective range
+                # The SSD1306 doesn't get much dimmer below ~5
+                hardware_contrast = int(5 + (self.edit_value / 255.0) * (255 - 5))
+                self.display.set_contrast(hardware_contrast)
+            
+            # Refresh display - check if we're in brightness bar mode
+            if self.edit_config.get("type") == "brightness_bar":
+                self._render_brightness_bar()
+            else:
+                with self.refresh_lock:
+                    self._refresh_current_menu()
         else:
             # Normal navigation
             if delta > 0:
@@ -360,6 +424,8 @@ class DynamicMenu:
             self._handle_checkbox(item)
         elif item_type == "editable":
             self._enter_edit_mode(item)
+        elif item_type == "brightness_bar":
+            self._enter_brightness_bar_mode(item)
         elif item_type == "action":
             self._handle_action(item)
     
@@ -409,7 +475,7 @@ class DynamicMenu:
         self.edit_config = item
         
         # Get current value
-        func_name = item.get("function")
+        func_name = item.get("function", "")
         if not func_name:
             # if this isn't recongized just use min as default
             self.edit_value = item.get("min", 0)
@@ -423,6 +489,58 @@ class DynamicMenu:
             self.edit_value = item.get("min", 0)
         
         self._refresh_current_menu()
+    
+    def _enter_brightness_bar_mode(self, item: Dict):
+        """Enter brightness bar mode for visual brightness adjustment.
+        
+        Args:
+            item: Brightness bar item configuration
+        """
+        self.edit_mode = True
+        self.edit_config = item
+        
+        # Get current value
+        func_name = item.get("function", "")
+        if "display_brightness" in func_name:
+            self.edit_value = user_settings.get_display_brightness()
+        elif "led_brightness" in func_name:
+            self.edit_value = user_settings.get_led_brightness()
+        else:
+            self.edit_value = item.get("min", 0)
+        
+        # Render the brightness bar interface
+        self._render_brightness_bar()
+    
+    def _render_brightness_bar(self):
+        """Render the brightness bar interface."""
+        # Create image
+        image = Image.new('1', (self.display.device.width, self.display.device.height), 0)
+        draw = ImageDraw.Draw(image)
+        
+        # Line 1: "Brightness"
+        draw.text((4, 4), "Brightness", fill=1)
+        
+        # Line 2: Bar showing current level
+        bar_x = 4
+        bar_y = 20
+        bar_width = 110  # Width of bar
+        bar_height = 8
+        
+        # Calculate fill based on current value
+        min_val = self.edit_config.get("min", 0)
+        max_val = self.edit_config.get("max", 255)
+        percentage = (self.edit_value - min_val) / (max_val - min_val) if max_val > min_val else 0
+        fill_width = int(bar_width * percentage)
+        
+        # Draw bar outline
+        draw.rectangle([(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)], outline=1, fill=0)
+        
+        # Draw filled portion (only if there's room for a visible rectangle)
+        if fill_width > 1:
+            draw.rectangle([(bar_x + 1, bar_y + 1), (bar_x + fill_width, bar_y + bar_height - 1)], fill=1)
+        
+        # Display the image (device handles rotation automatically)
+        self.display.device.display(image)
     
     def _save_edit_value(self):
         """Save the edited value."""
@@ -449,14 +567,12 @@ class DynamicMenu:
     def _set_orientation_left(self):
         """Set orientation to knob on left."""
         user_settings.set_orientation("left")
-        self.display.set_rotation(0)
-        logger.info("Orientation set to knob left")
+        self.display.set_rotation(180)
     
     def _set_orientation_right(self):
         """Set orientation to knob on right."""
         user_settings.set_orientation("right")
-        self.display.set_rotation(180)
-        logger.info("Orientation set to knob right")
+        self.display.set_rotation(0)
     
     def _set_display_brightness(self, value: int):
         """Set display brightness.
@@ -466,7 +582,6 @@ class DynamicMenu:
         """
         user_settings.set_display_brightness(value)
         self.display.set_contrast(value)
-        logger.info(f"Display brightness set to {value}")
     
     def _set_led_brightness(self, value: int):
         """Set LED brightness.
@@ -477,4 +592,3 @@ class DynamicMenu:
         user_settings.set_led_brightness(value)
         if self.led_controller:
             self.led_controller.set_brightness(value)
-        logger.info(f"LED brightness set to {value}")

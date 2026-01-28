@@ -5,13 +5,47 @@ Handles menu item storage and pre-rendering for optimal performance.
 import time
 import logging
 from typing import List, Dict, Tuple, Optional, Callable, Union
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
 
 # Type alias for menu items: can be a string or a dict with 'text' and 'action'
 MenuItem = Union[str, Dict[str, Union[str, Callable]]]
+
+
+def _load_font():
+    """Load the best available font for the display.
+    
+    Returns:
+        PIL ImageFont object
+    """
+    # Try fonts in order of preference for clarity at small sizes
+    font_options = [
+        # TrueType fonts - try common monospace fonts at exactly 8pt
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 8),
+        ("/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf", 8),
+        # Bitmap fonts - already designed for small sizes
+        "pillow/pillow/Tests/fonts/10x20-ISO8859-1.pcf",  # Pillow test font
+    ]
+    
+    for font_path in font_options:
+        try:
+            if isinstance(font_path, tuple):
+                path, size = font_path
+                font = ImageFont.truetype(path, size)
+                logger.info(f"Loaded font: {path} at {size}pt")
+                return font
+            else:
+                font = ImageFont.load(font_path)
+                logger.info(f"Loaded bitmap font: {font_path}")
+                return font
+        except Exception:
+            continue
+    
+    # Fallback to PIL's built-in default bitmap font
+    logger.info("Using PIL default bitmap font")
+    return ImageFont.load_default()
 
 
 class Menu:
@@ -33,6 +67,9 @@ class Menu:
         self.actions = [self._get_action(item) for item in items]
         self.display_width = display_width
         self.display_height = display_height
+        
+        # Load font for rendering
+        self.font = _load_font()
         
         # Pre-rendered frame buffers for all possible two-line combinations
         # Key is (line1, line2, cursor_line) tuple, value is the rendered Image
@@ -96,10 +133,10 @@ class Menu:
                 
                 if line1:
                     prefix1 = "> " if cursor_line == 0 else "  "
-                    draw.text((4, 4), prefix1 + line1, fill=1)
+                    draw.text((4, 4), prefix1 + line1, fill=1, font=self.font)
                 if line2:
                     prefix2 = "> " if cursor_line == 1 else "  "
-                    draw.text((4, 16), prefix2 + line2, fill=1)
+                    draw.text((4, 16), prefix2 + line2, fill=1, font=self.font)
                 
                 # Cache the complete frame
                 self._frame_cache[frame_key] = frame

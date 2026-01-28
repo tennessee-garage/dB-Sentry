@@ -9,18 +9,18 @@ menus:
 
   status:
     items:
-      - { text: "WiFi: {wifi_ssid}", type: "dynamic", function: "get_wifi_ssid", refresh: 10 }
-      - { text: "IP: {ip_address}", type: "dynamic", function: "get_ip_address", refresh: 10 }
-      - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 10 }
+      - { text: "WiFi: {wifi_ssid}", type: "dynamic", function: "get_wifi_ssid" }
+      - { text: "IP: {ip_address}", type: "dynamic", function: "get_ip_address" }
+      - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
       - { text: "Service: {service_status}", type: "dynamic", function: "get_service_status", refresh: 10 }
-      - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 10 }
+      - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
       - { text: "Back", type: "back" }
 
   settings:
     items:
       - { text: "Orientation", type: "submenu", submenu: "orientation" }
-      - { text: "Display brightness: {display_brightness}", type: "editable", function: "set_display_brightness", min: 0, max: 255 }
-      - { text: "LED brightness: {led_brightness}", type: "editable", function: "set_led_brightness", min: 0, max: 255 }
+      - { text: "Display brightness", type: "brightness_bar", function: "set_display_brightness", min: 0, max: 255 }
+      - { text: "LED brightness", type: "brightness_bar", function: "set_led_brightness", min: 0, max: 255 }
       - { text: "Back", type: "back" }
 
   orientation:
