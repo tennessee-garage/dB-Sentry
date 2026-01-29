@@ -58,12 +58,10 @@ class SentryHubInterface:
             delta: Rotation delta (+/- for direction)
             steps: Current encoder step position
         """
-        logger.debug(f"Encoder rotated: {delta}")
         self.menu.encoder_rotated(delta)
     
     def on_encoder_button(self):
         """Handle encoder button press."""
-        logger.debug("Encoder button pressed")
         self.menu.button_pressed()
     
     def signal_handler(self, signum, frame):

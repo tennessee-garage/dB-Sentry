@@ -94,10 +94,8 @@ class LEDController:
             level: Brightness level from 0 (off) to 255 (full brightness)
         """
         self.brightness = max(0, min(255, level))
-        if self.simulate:
-            logger.info("LED brightness set to %d (simulated)", self.brightness)
-        else:
-            logger.info("LED brightness set to %d", self.brightness)
+        mode = "simulated" if self.simulate else "hardware"
+        logger.info(f"LED brightness set to {self.brightness} ({mode})")
     
     def get_brightness(self) -> int:
         """Get current LED brightness level (0-255).

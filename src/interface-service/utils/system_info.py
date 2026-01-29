@@ -6,9 +6,26 @@ with appropriate fallback text for error conditions.
 
 import subprocess
 import logging
-from typing import Optional
+from typing import Optional, Callable, Any
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_execute(func: Callable[[], str], fallback: str) -> str:
+    """Safely execute a function with error handling.
+    
+    Args:
+        func: Function that returns a string value
+        fallback: Value to return if function fails
+        
+    Returns:
+        Function result or fallback value
+    """
+    try:
+        return func()
+    except Exception as e:
+        logger.debug(f"Error: {e}")
+        return fallback
 
 
 def get_wifi_ssid() -> str:
@@ -17,7 +34,7 @@ def get_wifi_ssid() -> str:
     Returns:
         SSID name or "Not connected" if unavailable
     """
-    try:
+    def _get_ssid():
         # Try iwgetid first (common on Raspberry Pi)
         result = subprocess.run(
             ["iwgetid", "-r"],
@@ -41,9 +58,8 @@ def get_wifi_ssid() -> str:
                     return line.split(":", 1)[1]
         
         return "Not connected"
-    except Exception as e:
-        logger.debug(f"Failed to get WiFi SSID: {e}")
-        return "Not connected"
+    
+    return _safe_execute(_get_ssid, "Not connected")
 
 
 def get_ip_address() -> str:
@@ -52,7 +68,7 @@ def get_ip_address() -> str:
     Returns:
         IP address or "No IP" if unavailable
     """
-    try:
+    def _get_ip():
         # Get hostname -I output
         result = subprocess.run(
             ["hostname", "-I"],
@@ -67,9 +83,8 @@ def get_ip_address() -> str:
                 return ips[0]
         
         return "No IP"
-    except Exception as e:
-        logger.debug(f"Failed to get IP address: {e}")
-        return "No IP"
+    
+    return _safe_execute(_get_ip, "No IP")
 
 
 def get_uptime() -> str:
@@ -78,7 +93,7 @@ def get_uptime() -> str:
     Returns:
         Formatted uptime or "Unknown" if unavailable
     """
-    try:
+    def _get_uptime():
         with open("/proc/uptime", "r") as f:
             uptime_seconds = float(f.read().split()[0])
         
@@ -87,9 +102,8 @@ def get_uptime() -> str:
         seconds = int(uptime_seconds % 60)
         
         return f"{hours}h {minutes}m {seconds}s"
-    except Exception as e:
-        logger.debug(f"Failed to get uptime: {e}")
-        return "Unknown"
+    
+    return _safe_execute(_get_uptime, "Unknown")
 
 
 def get_service_status() -> str:
@@ -98,7 +112,7 @@ def get_service_status() -> str:
     Returns:
         Service status (active/inactive/failed) or "Unavailable"
     """
-    try:
+    def _get_status():
         result = subprocess.run(
             ["systemctl", "is-active", "db-sentry-limit.service"],
             capture_output=True,
@@ -117,9 +131,8 @@ def get_service_status() -> str:
         }
         
         return status_map.get(status, status.capitalize() if status else "Unavailable")
-    except Exception as e:
-        logger.debug(f"Failed to get service status: {e}")
-        return "Unavailable"
+    
+    return _safe_execute(_get_status, "Unavailable")
 
 
 def get_load_average() -> str:
@@ -128,7 +141,7 @@ def get_load_average() -> str:
     Returns:
         Load averages formatted as "X.XX / Y.YY / Z.ZZ" or "N/A"
     """
-    try:
+    def _get_load():
         with open("/proc/loadavg", "r") as f:
             load_data = f.read().split()[:3]
         
@@ -136,6 +149,5 @@ def get_load_average() -> str:
             return f"{load_data[0]} / {load_data[1]} / {load_data[2]}"
         
         return "N/A"
-    except Exception as e:
-        logger.debug(f"Failed to get load average: {e}")
-        return "N/A"
+    
+    return _safe_execute(_get_load, "N/A")

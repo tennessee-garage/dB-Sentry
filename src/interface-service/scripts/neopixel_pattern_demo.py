@@ -21,10 +21,7 @@ import time
 from pathlib import Path
 
 # Add parent directory to path
-script_dir = Path(__file__).resolve().parent
-parent_dir = script_dir.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     from rpi_ws281x import PixelStrip, Color
