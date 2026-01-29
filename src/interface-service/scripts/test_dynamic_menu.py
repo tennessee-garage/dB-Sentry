@@ -23,7 +23,7 @@ if str(parent_dir) not in sys.path:
 from interface.oled_display import OledDisplay
 from interface.dynamic_menu import DynamicMenu
 from interface.encoder import EncoderControl
-from led_controller import LEDController
+from interface.led_controller import LEDController
 import logging
 
 # Configure logging

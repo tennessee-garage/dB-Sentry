@@ -9,7 +9,8 @@ from pathlib import Path
 from interface.oled_display import OledDisplay
 from interface.dynamic_menu import DynamicMenu
 from interface.encoder import EncoderControl
-from led_controller import LEDController
+from interface.led_controller import LEDController
+from ipc.led_ipc_server import LEDIPCServer
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,11 @@ class SentryHubInterface:
         # Initialize LED controller (may run in simulate mode)
         self.led_controller = LEDController()
         logger.info(f"LED controller initialized (simulate={self.led_controller.simulate})")
+        
+        # Initialize LED IPC server for remote control
+        self.led_ipc_server = LEDIPCServer(self.led_controller)
+        self.led_ipc_server.start()
+        logger.info("LED IPC server started")
         
         # Initialize dynamic menu
         self.menu = DynamicMenu(
@@ -79,11 +85,17 @@ class SentryHubInterface:
         """Clean up resources."""
         logger.info("Cleaning up...")
         
+        # Stop LED IPC server
+        self.led_ipc_server.stop()
+        
         # Stop menu refresh thread
         self.menu.stop()
         
         # Clear display
         self.display.clear()
+        
+        # Clear LEDs
+        self.led_controller.set_color(0, 0, 0)
         
         logger.info("Cleanup complete")
     

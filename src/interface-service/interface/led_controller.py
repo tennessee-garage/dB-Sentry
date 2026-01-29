@@ -1,5 +1,5 @@
 import logging
-from config import cfg
+from config.app_config import cfg
 from typing import Optional, Any, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ class LEDController:
 
     def __init__(self):
         self.simulate: bool = cfg.led_simulate or (not _HAVE_RPI_WS281X)
+        self.pin: int = cfg.led_pin
         self.count: int = cfg.led_count
         self.brightness: int = 255  # Default full brightness
         # hardware objects (only set when real hardware is available)
@@ -40,8 +41,19 @@ class LEDController:
 
         if not self.simulate and _HAVE_RPI_WS281X and PixelStrip is not None:
             try:
-                # Typical defaults; user can modify via env if desired
-                self.strip = PixelStrip(self.count, 18)
+                # Initialize with explicit parameters to avoid DMA/SPI conflicts
+                # Use DMA channel 10 (default is 10, but being explicit)
+                # freq_hz = 800000 (800kHz for WS2812B)
+                # invert = False, brightness = 255, channel = 0 (PWM channel)
+                self.strip = PixelStrip(
+                    num=self.count,
+                    pin=self.pin,
+                    freq_hz=800000,
+                    dma=10,
+                    invert=False,
+                    brightness=255,
+                    channel=0
+                )
                 # PixelStrip.begin may not be present in stubbed environments
                 if self.strip and hasattr(self.strip, 'begin'):
                     self.strip.begin()

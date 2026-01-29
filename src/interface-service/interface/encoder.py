@@ -7,7 +7,7 @@ import time
 import logging
 
 from typing import Optional, Callable
-from config import cfg
+from config.app_config import cfg
 from gpiozero import RotaryEncoder, Button
 
 logger = logging.getLogger(__name__)

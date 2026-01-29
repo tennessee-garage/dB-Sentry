@@ -2,7 +2,7 @@
 """Main entry point for SentryHub interface service."""
 
 import logging
-from sentry_hub_interface import SentryHubInterface
+from interface.sentry_hub_interface import SentryHubInterface
 
 # Configure logging
 logging.basicConfig(

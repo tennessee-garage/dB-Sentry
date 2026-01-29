@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
-from config import cfg
+from config.app_config import cfg
 
 logger = logging.getLogger(__name__)
 

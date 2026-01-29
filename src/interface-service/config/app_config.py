@@ -6,8 +6,9 @@ load_dotenv()
 
 @dataclass
 class Config:
-	led_simulate: bool = os.getenv("LED_SIMULATE", "true").lower() in ("1", "true", "yes")
-	led_count: int = int(os.getenv("LED_COUNT", "30"))
+	led_simulate: bool = os.getenv("LED_SIMULATE", "false").lower() in ("1", "true", "yes")
+	led_count: int = int(os.getenv("LED_COUNT", "20"))
+	led_pin: int = int(os.getenv("LED_PIN", "18"))
 
 	# Note that these use BCM GPIO pin numbers e.g. GPIO19 will be 19 here.
 	encoder_data_pin: int = int(os.getenv("ENCODER_DATA_PIN", "19"))
