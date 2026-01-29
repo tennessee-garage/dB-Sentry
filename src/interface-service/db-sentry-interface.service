@@ -1,0 +1,24 @@
+[Unit]
+Description=db-Sentry Interface Service
+Documentation=file:///home/garth/dB-Sentry/src/interface-service/README.md
+After=network.target pigpiod.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/garth/dB-Sentry/src/interface-service
+ExecStart=/home/garth/dB-Sentry/src/interface-service/venv/bin/python3 main.py
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=db-sentry-interface
+
+# Security hardening (optional - comment out if needed for development)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

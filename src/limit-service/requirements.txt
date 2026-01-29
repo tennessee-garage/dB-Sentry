@@ -7,6 +7,7 @@ Jinja2
 python-dotenv
 pyyaml
 luma.oled
-RPi.GPIO
-spidev
-rpi_ws281x; platform_machine=='armv7l' or platform_machine=='aarch64'
+gpiozero
+RPi.GPIO; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
+spidev; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
+rpi_ws281x; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
