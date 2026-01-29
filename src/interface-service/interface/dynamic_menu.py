@@ -66,6 +66,10 @@ class DynamicMenu:
         self.edit_value: int = 0
         self.edit_config: Dict = {}
         
+        # LED state tracking for brightness adjustment
+        self.saved_led_state: Dict[str, int] = {}  # Save color when adjusting brightness
+        self.showing_rainbow: bool = False
+        
         # Refresh thread state
         self.refresh_lock = threading.RLock()  # Use RLock for reentrant locking
         self.refresh_thread: Optional[threading.Thread] = None
@@ -375,6 +379,10 @@ class DynamicMenu:
                 # The SSD1306 doesn't get much dimmer below ~5
                 hardware_contrast = int(5 + (self.edit_value / 255.0) * (255 - 5))
                 self.display.set_contrast(hardware_contrast)
+            elif "led_brightness" in func_name and self.showing_rainbow:
+                # Apply LED brightness in real-time for rainbow pattern
+                if self.led_controller:
+                    self.led_controller.set_brightness(self.edit_value)
             
             # Refresh display - check if we're in brightness bar mode
             if self.edit_config.get("type") == "brightness_bar":
@@ -505,11 +513,89 @@ class DynamicMenu:
             self.edit_value = user_settings.get_display_brightness()
         elif "led_brightness" in func_name:
             self.edit_value = user_settings.get_led_brightness()
+            # Save current LED state and show rainbow pattern
+            if self.led_controller:
+                self.saved_led_state = {
+                    "brightness": self.led_controller.get_brightness()
+                }
+                self._show_rainbow_pattern()
+                self.showing_rainbow = True
         else:
             self.edit_value = item.get("min", 0)
         
         # Render the brightness bar interface
         self._render_brightness_bar()
+    
+    def _show_rainbow_pattern(self):
+        """Show a rainbow pattern across the LED strip."""
+        if not self.led_controller:
+            return
+        
+        try:
+            # Create rainbow colors across the strip
+            num_pixels = self.led_controller.count
+            for i in range(num_pixels):
+                # Calculate hue for rainbow (0-360 degrees)
+                hue = (i / num_pixels) * 360
+                # Convert HSV to RGB
+                r, g, b = self._hsv_to_rgb(hue, 100, 100)
+                
+                # Set pixel color (use low-level access if available)
+                if hasattr(self.led_controller, 'strip') and self.led_controller.strip:
+                    if hasattr(self.led_controller.strip, 'setPixelColor'):
+                        try:
+                            self.led_controller.strip.setPixelColor(
+                                i, 
+                                self.led_controller.Color(r, g, b)
+                            )
+                        except Exception:
+                            pass
+                    # Show the pixels
+                    if hasattr(self.led_controller.strip, 'show'):
+                        try:
+                            self.led_controller.strip.show()
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.error(f"Error showing rainbow pattern: {e}")
+    
+    def _hsv_to_rgb(self, h: float, s: float, v: float) -> tuple:
+        """Convert HSV color to RGB.
+        
+        Args:
+            h: Hue (0-360)
+            s: Saturation (0-100)
+            v: Value (0-100)
+            
+        Returns:
+            Tuple of (r, g, b) values (0-255)
+        """
+        s = s / 100.0
+        v = v / 100.0
+        h = h / 60.0
+        
+        c = v * s
+        x = c * (1 - abs((h % 2) - 1))
+        m = v - c
+        
+        if h < 1:
+            r, g, b = c, x, 0
+        elif h < 2:
+            r, g, b = x, c, 0
+        elif h < 3:
+            r, g, b = 0, c, x
+        elif h < 4:
+            r, g, b = 0, x, c
+        elif h < 5:
+            r, g, b = x, 0, c
+        else:
+            r, g, b = c, 0, x
+        
+        return (
+            int((r + m) * 255),
+            int((g + m) * 255),
+            int((b + m) * 255)
+        )
     
     def _render_brightness_bar(self):
         """Render the brightness bar interface."""
@@ -549,6 +635,16 @@ class DynamicMenu:
             func = self.function_registry.get(func_name)
             if func:
                 func(self.edit_value)
+        
+        # Clear rainbow pattern and restore LED state after brightness adjustment
+        if self.showing_rainbow and self.led_controller:
+            self.showing_rainbow = False
+            # Clear the LEDs to return to previous state (off)
+            try:
+                self.led_controller.clear()
+            except Exception as e:
+                logger.error(f"Error clearing LEDs: {e}")
+            self.saved_led_state = {}
     
     def _handle_action(self, item: Dict):
         """Handle action item.

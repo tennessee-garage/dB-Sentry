@@ -108,6 +108,15 @@ class LEDController:
         self.brightness = max(0, min(255, level))
         mode = "simulated" if self.simulate else "hardware"
         logger.info(f"LED brightness set to {self.brightness} ({mode})")
+        
+        # Apply brightness to hardware if available
+        if not self.simulate and self.strip and hasattr(self.strip, 'setBrightness'):
+            try:
+                self.strip.setBrightness(self.brightness)
+                if hasattr(self.strip, 'show'):
+                    self.strip.show()
+            except Exception as e:
+                logger.error(f"Failed to set hardware brightness: {e}")
     
     def get_brightness(self) -> int:
         """Get current LED brightness level (0-255).
@@ -116,6 +125,10 @@ class LEDController:
             Current brightness level
         """
         return self.brightness
+    
+    def clear(self):
+        """Turn off all LEDs (set to black)."""
+        self.set_color(0, 0, 0)
 
     def set_by_value(self, value: float, limits: dict):
         """Simple evaluation: if value < low -> green, between low/mid -> yellow, > high -> red."""
