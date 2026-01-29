@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
-    from rpi_ws281x import PixelStrip, Color
+    from rpi_ws281x import PixelStrip, Color  # type: ignore
 except ImportError:
     print("Warning: rpi_ws281x not available. Install with:")
     print("  pip install rpi-ws281x")
