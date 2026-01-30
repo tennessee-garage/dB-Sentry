@@ -4,8 +4,7 @@ set -e
 echo "==> Installing system packages (needs sudo)..."
 sudo apt-get update
 sudo apt-get install -y python3-dev build-essential libfreetype-dev libjpeg-dev \
-                        python3-gpiozero python3-pigpio pigpio python3-rpi.gpio
-sudo systemctl enable --now pigpiod
+                        python3-gpiozero python3-rpi.gpio
 
 echo "==> Setting up virtualenv..."
 python3 -m venv venv --system-site-packages
