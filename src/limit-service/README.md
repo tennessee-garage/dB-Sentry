@@ -81,11 +81,8 @@ Files of interest
 - `main.py` - entrypoint that starts MQTT, Influx and the web server.
 - `mqtt_client.py` - MQTT subscription and message handling.
 - `influx_client.py` - read/write limit values.
-- `led_controller.py` - hardware/simulated LED control.
 - `webserver.py` - FastAPI app exposing UI and update endpoints.
 
 Notes
-Notes
 - InfluxDB: The project now prefers InfluxDB v1. Configure `INFLUX_HOST`, `INFLUX_PORT`, `INFLUX_USER`, `INFLUX_PASSWORD`, and `INFLUX_DB` in your `.env` to persist limits. If `INFLUX_DB` is not set or the v1 client is unavailable, the service will use an in-memory Noop client with default limits.
 	The v2 `influxdb-client` settings (`INFLUX_URL`, `INFLUX_TOKEN`, `INFLUX_ORG`, `INFLUX_BUCKET`) remain in `.env.example` for legacy reference but are not used by default.
-- For real LED control on a Pi, set `LED_SIMULATE=false`; this will attempt to import `rpi_ws281x`.

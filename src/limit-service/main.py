@@ -11,7 +11,6 @@ import threading
 from mqtt.dba_message import DBAMessage
 from mqtt.factory import create_message
 import alert
-from interface.encoder import EncoderControl
 
 
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +22,6 @@ influx = create_influx_client()
 sensor_limits = influx.read_sensor_limits()
 window_seconds = influx.read_window_seconds()
 monitor = alert.Monitor(window_seconds)
-
-encoder = EncoderControl()
 
 # lock to protect sensor_band_values (callback runs in MQTT thread)
 sensor_lock = threading.Lock()

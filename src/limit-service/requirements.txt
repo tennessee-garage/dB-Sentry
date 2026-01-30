@@ -6,8 +6,3 @@ influxdb
 Jinja2
 python-dotenv
 pyyaml
-luma.oled
-gpiozero
-RPi.GPIO; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
-spidev; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
-rpi_ws281x; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
