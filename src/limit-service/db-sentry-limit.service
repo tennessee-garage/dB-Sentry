@@ -15,8 +15,5 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# Give the service access to GPIO
-SupplementaryGroups=gpio i2c spi
-
 [Install]
 WantedBy=multi-user.target
