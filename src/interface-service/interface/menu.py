@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 # Type alias for menu items: can be a string or a dict with 'text' and 'action'
 MenuItem = Union[str, Dict[str, Union[str, Callable]]]
 
+# Cache the font so it's only loaded once
+_cached_font = None
+
 
 def _load_font():
     """Load the best available font for the display.
@@ -20,13 +23,17 @@ def _load_font():
     Returns:
         PIL ImageFont object
     """
+    global _cached_font
+    
+    # Return cached font if already loaded
+    if _cached_font is not None:
+        return _cached_font
+    
     # Try fonts in order of preference for clarity at small sizes
+    # Point sizes are larger than pixel heights - 10pt renders to ~8px on OLED
     font_options = [
-        # TrueType fonts - try common monospace fonts at exactly 8pt
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 8),
-        ("/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf", 8),
-        # Bitmap fonts - already designed for small sizes
-        "pillow/pillow/Tests/fonts/10x20-ISO8859-1.pcf",  # Pillow test font
+        # TrueType fonts - try common proportional (non-monospace) fonts first
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
     ]
     
     for font_path in font_options:
@@ -35,17 +42,20 @@ def _load_font():
                 path, size = font_path
                 font = ImageFont.truetype(path, size)
                 logger.info(f"Loaded font: {path} at {size}pt")
+                _cached_font = font
                 return font
             else:
                 font = ImageFont.load(font_path)
                 logger.info(f"Loaded bitmap font: {font_path}")
+                _cached_font = font
                 return font
         except Exception:
             continue
     
     # Fallback to PIL's built-in default bitmap font
-    logger.info("Using PIL default bitmap font")
-    return ImageFont.load_default()
+    logger.debug("Using PIL default bitmap font")
+    _cached_font = ImageFont.load_default()
+    return _cached_font
 
 
 class Menu:
@@ -62,9 +72,10 @@ class Menu:
             display_width: Width of the display in pixels (default 128)
             display_height: Height of the display in pixels (default 32)
         """
-        self.raw_items = items
-        self.items = [self._get_text(item) for item in items]
-        self.actions = [self._get_action(item) for item in items]
+        # Add a blank item at the end to allow scrolling last item to top
+        self.raw_items = items + [""]
+        self.items = [self._get_text(item) for item in self.raw_items]
+        self.actions = [self._get_action(item) for item in self.raw_items]
         self.display_width = display_width
         self.display_height = display_height
         
@@ -113,7 +124,7 @@ class Menu:
     
     def _prerender_frames(self) -> None:
         """Pre-render all possible frame buffers for the menu."""
-        logger.info(f"Pre-rendering {len(self.items)} menu items...")
+        logger.debug(f"Pre-rendering {len(self.items)} menu items...")
         start_time = time.perf_counter()
         
         # Pre-render all possible two-line combinations with all cursor positions
@@ -122,7 +133,7 @@ class Menu:
             line2 = self.items[scroll_index + 1] if scroll_index + 1 < len(self.items) else ""
             
             # Pre-render with cursor on line 1, line 2, and no cursor
-            for cursor_line in [0, 1, None]:
+            for cursor_line in [0, 1]:
                 frame_key = (scroll_index, cursor_line)
                 if frame_key in self._frame_cache:
                     continue
@@ -142,34 +153,33 @@ class Menu:
                 self._frame_cache[frame_key] = frame
         
         elapsed = time.perf_counter() - start_time
-        logger.info(f"Pre-rendered {len(self._frame_cache)} frames in {elapsed*1000:.1f}ms")
+        logger.debug(f"Pre-rendered {len(self._frame_cache)} frames in {elapsed*1000:.1f}ms")
     
-    def get_frame(self, scroll_index: int, cursor_line: Optional[int] = None) -> Optional[Image.Image]:
+    def get_frame(self, scroll_index: int, cursor_line: Optional[int] = 0) -> Optional[Image.Image]:
         """
-        Get a pre-rendered frame for the given two lines with optional cursor.
+        Get a pre-rendered frame for the given scroll position.
         
         Args:
             scroll_index: Index of the first line in the menu
-            cursor_line: Which line has the cursor (0=first, 1=second, None=no cursor)
+            cursor_line: Always 0 (cursor on top line), kept for compatibility
             
         Returns:
             Pre-rendered PIL Image, or None if not cached
         """
-        return self._frame_cache.get((scroll_index, cursor_line))
+        return self._frame_cache.get((scroll_index, 0))
     
-    def has_frame(self, scroll_index: int, cursor_line: Optional[int] = None) -> bool:
+    def has_frame(self, scroll_index: int, cursor_line: Optional[int] = 0) -> bool:
         """
-        Check if a frame is cached for the given two lines with cursor position.
+        Check if a frame is cached for the given scroll position.
         
         Args:
-            line1: First line of text
-            line2: Second line of text
-            cursor_line: Which line has the cursor (0=first, 1=second, None=no cursor)
+            scroll_index: Index of the first line in the menu
+            cursor_line: Always 0 (cursor on top line), kept for compatibility
             
         Returns:
             True if frame is cached
         """
-        return (scroll_index, cursor_line) in self._frame_cache
+        return (scroll_index, 0) in self._frame_cache
     
     def get_item(self, index: int) -> str:
         """

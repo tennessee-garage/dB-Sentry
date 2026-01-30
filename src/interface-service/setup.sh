@@ -4,7 +4,8 @@ set -e
 echo "==> Installing system packages (needs sudo)..."
 sudo apt-get update
 sudo apt-get install -y python3-dev build-essential libfreetype-dev libjpeg-dev \
-                        python3-gpiozero python3-rpi.gpio
+                        python3-gpiozero python3-rpi.gpio \
+                        fonts-dejavu fonts-liberation
 
 echo "==> Setting up virtualenv..."
 python3 -m venv venv --system-site-packages

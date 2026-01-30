@@ -99,7 +99,6 @@ class DynamicMenu:
         
         # Initialize and display first menu
         self.display.scroll_index = 0
-        self.display.cursor_position = 0
         self._refresh_current_menu()
         self._start_refresh_thread()
     
@@ -256,7 +255,6 @@ class DynamicMenu:
             
             # Save current position if preserving
             saved_scroll = self.display.scroll_index if preserve_position else 0
-            saved_cursor = self.display.cursor_position if preserve_position else 0
             
             # Refresh dynamic items on navigate
             for item in items:
@@ -276,10 +274,8 @@ class DynamicMenu:
             self.display.current_menu = menu
             if preserve_position:
                 self.display.scroll_index = saved_scroll
-                self.display.cursor_position = saved_cursor
             else:
                 self.display.scroll_index = 0
-                self.display.cursor_position = 0
             
             # Display the menu at the correct position
             self.display._display_current_menu()
@@ -333,13 +329,15 @@ class DynamicMenu:
         """Move cursor down."""
         self._wake_display()
         if not self.edit_mode:
-            self.display.move_cursor_down()
+            with self.refresh_lock:
+                self.display.move_cursor_down()
     
     def move_cursor_up(self):
         """Move cursor up."""
         self._wake_display()
         if not self.edit_mode:
-            self.display.move_cursor_up()
+            with self.refresh_lock:
+                self.display.move_cursor_up()
     
     def encoder_rotated(self, delta: int):
         """Handle encoder rotation.
@@ -447,7 +445,6 @@ class DynamicMenu:
         self.current_menu_name = menu_name
         # Reset display position when entering a new menu
         self.display.scroll_index = 0
-        self.display.cursor_position = 0
         self._refresh_current_menu()
     
     def _navigate_back(self):
@@ -457,7 +454,6 @@ class DynamicMenu:
             self.current_menu_name = self.menu_stack[-1]
             # Reset display position when going back
             self.display.scroll_index = 0
-            self.display.cursor_position = 0
             self._refresh_current_menu()
     
     def _handle_checkbox(self, item: Dict):

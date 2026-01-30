@@ -47,7 +47,6 @@ class OledDisplay:
 
         self.current_menu: Optional[Menu] = None
         self.scroll_index: int = 0
-        self.cursor_position: int = 0  # Which line (0 or 1) has the cursor
         self.rotation: int = 0  # 0 or 180 degrees
 
     def screen_reset(self) -> None:
@@ -122,23 +121,22 @@ class OledDisplay:
 
     def load_menu(self, menu: Menu) -> None:
         """
-        Load a menu and display the first two items with cursor.
+        Load a menu and display the first item with cursor.
         
         Args:
             menu: Menu object with pre-rendered frames
         """
         self.current_menu = menu
         self.scroll_index = 0
-        self.cursor_position = 0  # Start with cursor on first line
         self._display_current_menu()
 
     def _display_current_menu(self) -> None:
-        """Display the current menu state with cursor."""
+        """Display the current menu state with cursor on line 0."""
         if not self.current_menu:
             return
         
-        # Try to use pre-rendered frame with cursor
-        frame = self.current_menu.get_frame(self.scroll_index, self.cursor_position)
+        # Use pre-rendered frame with cursor always on line 0
+        frame = self.current_menu.get_frame(self.scroll_index, 0)
         if frame:
             self.device.display(frame)
         else:
@@ -152,47 +150,34 @@ class OledDisplay:
         Get the index of the currently selected menu item.
         
         Returns:
-            Index of the selected item
+            Index of the selected item (always scroll_index since cursor is on line 0)
         """
-        return self.scroll_index + self.cursor_position
+        return self.scroll_index
     
     def move_cursor_down(self) -> None:
-        """Move cursor down to the next line or scroll if at bottom."""
+        """Scroll down to the next menu item (cursor stays on line 0)."""
         if not self.current_menu:
             return
         
         total_items = len(self.current_menu)
-        current_selected = self.scroll_index + self.cursor_position
         
-        # Don't go past the last item
-        if current_selected >= total_items - 1:
+        # Don't scroll past the last actual item (before the blank item)
+        if self.scroll_index >= total_items - 2:
             return
         
-        if self.cursor_position == 0:
-            # Move cursor to second line
-            self.cursor_position = 1
-        elif self.cursor_position == 1:
-            # Scroll down if there are more items below
-            if self.scroll_index + 2 < total_items:
-                self.scroll_index += 1
-        
+        self.scroll_index += 1
         self._display_current_menu()
     
     def move_cursor_up(self) -> None:
-        """Move cursor up to the previous line or scroll if at top."""
+        """Scroll up to the previous menu item (cursor stays on line 0)."""
         if not self.current_menu:
             return
         
-        if self.cursor_position == 1:
-            # Move cursor to first line
-            self.cursor_position = 0
-        elif self.cursor_position == 0 and self.scroll_index > 0:
-            # Scroll up, keep cursor on first line
-            self.scroll_index -= 1
-        else:
-            # Do nothing if we've hit a boundary
+        # Don't scroll past the top
+        if self.scroll_index <= 0:
             return
         
+        self.scroll_index -= 1
         self._display_current_menu()
 
     def clear(self):
