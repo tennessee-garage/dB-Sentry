@@ -82,6 +82,21 @@ View logs:
 sudo journalctl -u interface-service -f
 ```
 
+Service management:
+```bash
+# Check service status
+sudo systemctl status interface-service
+
+# Start the service
+sudo systemctl start interface-service
+
+# Stop the service
+sudo systemctl stop interface-service
+
+# Restart the service
+sudo systemctl restart interface-service
+```
+
 ## Architecture
 
 ### Directory Structure
