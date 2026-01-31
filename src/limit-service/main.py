@@ -1,7 +1,7 @@
 import logging
 from typing import Dict
 from mqtt.client import start_mqtt_service
-from webserver import run_in_thread
+from webserver import run_in_thread, set_limits_changed_event, set_window_seconds_changed_event
 from influx_client import create_influx_client
 from config import cfg
 import time
@@ -18,6 +18,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('limit-service')
 
 influx = create_influx_client()
+
+# Events to signal when configuration has changed
+limits_changed_event = threading.Event()
+window_seconds_changed_event = threading.Event()
 
 # Keep track of sensor band values
 sensor_limits = influx.read_sensor_limits()
@@ -87,6 +91,11 @@ def check_alerts():
 
 if __name__ == '__main__':
 	logger.info("Starting limit-service")
+	
+	# Register change events with the webserver
+	set_limits_changed_event(limits_changed_event)
+	set_window_seconds_changed_event(window_seconds_changed_event)
+	
 	# start webserver
 	run_in_thread(port=8000)
 
@@ -96,6 +105,20 @@ if __name__ == '__main__':
 	# main loop: check alerts once per second
 	try:
 		while True:
+			# Check if limits have changed and refresh if needed
+			if limits_changed_event.is_set():
+				logger.info("Refreshing sensor limits from InfluxDB")
+				sensor_limits.clear()
+				sensor_limits.update(influx.read_sensor_limits())
+				limits_changed_event.clear()
+			
+			# Check if window_seconds have changed and refresh if needed
+			if window_seconds_changed_event.is_set():
+				window_seconds = influx.read_window_seconds()
+				logger.info(f"Updating monitor window to {window_seconds} seconds")
+				monitor.update_window_seconds(window_seconds)
+				window_seconds_changed_event.clear()
+			
 			check_alerts()
 			time.sleep(1)
 

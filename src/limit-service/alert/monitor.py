@@ -34,3 +34,10 @@ class Monitor:
 			max_values[sensor] = max_avg
 
 		return max_values
+	
+	def update_window_seconds(self, window_seconds: int):
+		"""Update the window size for all band windows."""
+		self.window_seconds = window_seconds
+		for bands in self.sensors.values():
+			for window in bands.values():
+				window.update_window(window_seconds)

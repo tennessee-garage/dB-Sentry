@@ -7,12 +7,26 @@ import uvicorn
 import threading
 import logging
 
-from typing import Dict
+from typing import Dict, Optional
 
 logger = logging.getLogger('limit-service.webserver')
 
 app = FastAPI()
 influx = create_influx_client()
+
+# Signals to main loop that configuration has changed
+limits_changed_event: Optional[threading.Event] = None
+window_seconds_changed_event: Optional[threading.Event] = None
+
+def set_limits_changed_event(event: threading.Event):
+	"""Called by main.py to register the event for signaling limit changes."""
+	global limits_changed_event
+	limits_changed_event = event
+
+def set_window_seconds_changed_event(event: threading.Event):
+	"""Called by main.py to register the event for signaling window_seconds changes."""
+	global window_seconds_changed_event
+	window_seconds_changed_event = event
 
 INDEX_HTML = """
 <!doctype html>
@@ -84,6 +98,9 @@ async def update_limits(request: Request):
 
 	if updated:
 		logger.info(f"Updating {len(updated)} sensor limit(s)")
+		# Signal main loop to refresh sensor limits
+		if limits_changed_event:
+			limits_changed_event.set()
 	else:
 		logger.info("No sensor limits to update")
 
@@ -97,6 +114,9 @@ async def update_limits(request: Request):
 		ws_val = int(ws)
 		logger.info(f"Updating window_seconds to {ws_val}")
 		influx.set_window_seconds(ws_val)
+		# Signal main loop to refresh window_seconds
+		if window_seconds_changed_event:
+			window_seconds_changed_event.set()
 
 	return RedirectResponse(url='/', status_code=303)
 
