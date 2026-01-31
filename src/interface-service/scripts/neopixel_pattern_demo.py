@@ -23,6 +23,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.color_utils import hsv_to_rgb
+
 try:
     from rpi_ws281x import PixelStrip, Color  # type: ignore
 except ImportError:
@@ -69,7 +71,9 @@ class NeopixelDemo:
             for offset in range(256):
                 for i in range(self.count):
                     hue = (offset + i * 256 // self.count) % 256
-                    color = self._hsv_to_rgb(hue, 255, 255)
+                    # Convert 0-255 hue to 0-360 degrees, and 0-255 saturation/value to 0-100
+                    r, g, b = hsv_to_rgb(hue * 360 / 255, 100, 100)
+                    color = Color(r, g, b)
                     self.strip.setPixelColor(i, color)
                 self.strip.show()
                 time.sleep(speed)
@@ -170,45 +174,6 @@ class NeopixelDemo:
             
             if time.time() - start_time >= duration:
                 break
-    
-    @staticmethod
-    def _hsv_to_rgb(h, s, v):
-        """Convert HSV color to RGB Color object.
-        
-        Args:
-            h: Hue (0-255)
-            s: Saturation (0-255)
-            v: Value (0-255)
-            
-        Returns:
-            Color object
-        """
-        h = h % 256
-        s = s / 255.0
-        v = v / 255.0
-        
-        c = v * s
-        x = c * (1 - abs((h / 42.666) % 2 - 1))
-        m = v - c
-        
-        if h < 42.666:
-            r, g, b = c, x, 0
-        elif h < 85.333:
-            r, g, b = x, c, 0
-        elif h < 127.999:
-            r, g, b = 0, c, x
-        elif h < 170.666:
-            r, g, b = 0, x, c
-        elif h < 213.333:
-            r, g, b = x, 0, c
-        else:
-            r, g, b = c, 0, x
-            
-        return Color(
-            int((r + m) * 255),
-            int((g + m) * 255),
-            int((b + m) * 255)
-        )
     
     def cleanup(self):
         """Clean up and turn off the strip."""

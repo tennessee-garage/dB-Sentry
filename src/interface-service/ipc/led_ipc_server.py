@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Callable
 from interface.led_controller import LEDController
 from utils.user_settings import user_settings
+from utils.color_utils import hsv_to_rgb
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,7 @@ class LEDIPCServer:
                 status = history_list[history_len - 10 + i]
                 # Get hue from user settings and convert to RGB
                 hue = user_settings.get_alert_hue(status)
-                r, g, b = self._hsv_to_rgb(hue * 360.0, 100, 100)
+                r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
             else:
                 # Empty slot - unlit
                 r, g, b = 0, 0, 0
@@ -224,7 +225,7 @@ class LEDIPCServer:
         if history_list:
             most_recent = history_list[-1]
             hue = user_settings.get_alert_hue(most_recent)
-            r, g, b = self._hsv_to_rgb(hue * 360.0, 100, 100)
+            r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
         else:
             # No status yet - all off
             r, g, b = 0, 0, 0
@@ -234,41 +235,3 @@ class LEDIPCServer:
         
         # Send to LED controller
         self.led.set_pixels(pixels)
-    
-    def _hsv_to_rgb(self, h: float, s: float, v: float) -> tuple:
-        """Convert HSV color to RGB.
-        
-        Args:
-            h: Hue (0-360)
-            s: Saturation (0-100)
-            v: Value (0-100)
-            
-        Returns:
-            Tuple of (r, g, b) values (0-255)
-        """
-        s = s / 100.0
-        v = v / 100.0
-        h = h / 60.0
-        
-        c = v * s
-        x = c * (1 - abs((h % 2) - 1))
-        m = v - c
-        
-        if h < 1:
-            r, g, b = c, x, 0
-        elif h < 2:
-            r, g, b = x, c, 0
-        elif h < 3:
-            r, g, b = 0, c, x
-        elif h < 4:
-            r, g, b = 0, x, c
-        elif h < 5:
-            r, g, b = x, 0, c
-        else:
-            r, g, b = c, 0, x
-        
-        return (
-            int((r + m) * 255),
-            int((g + m) * 255),
-            int((b + m) * 255)
-        )

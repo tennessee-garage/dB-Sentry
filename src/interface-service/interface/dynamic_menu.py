@@ -27,6 +27,7 @@ from utils.system_info import (
     get_load_average
 )
 from utils.user_settings import user_settings
+from utils.color_utils import hsv_to_rgb
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +401,7 @@ class DynamicMenu:
                 
                 # Show hue on LEDs in real-time
                 if self.led_controller:
-                    r, g, b = self._hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
+                    r, g, b = hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
                     self.led_controller.set_color(r, g, b)
                 
                 # Refresh display
@@ -570,7 +571,7 @@ class DynamicMenu:
                 # Calculate hue for rainbow (0-360 degrees)
                 hue = (i / num_pixels) * 360
                 # Convert HSV to RGB
-                r, g, b = self._hsv_to_rgb(hue, 100, 100)
+                r, g, b = hsv_to_rgb(hue, 100, 100)
                 
                 # Set pixel color (use low-level access if available)
                 if hasattr(self.led_controller, 'strip') and self.led_controller.strip:
@@ -590,44 +591,6 @@ class DynamicMenu:
                             pass
         except Exception as e:
             logger.error(f"Error showing rainbow pattern: {e}")
-    
-    def _hsv_to_rgb(self, h: float, s: float, v: float) -> tuple:
-        """Convert HSV color to RGB.
-        
-        Args:
-            h: Hue (0-360)
-            s: Saturation (0-100)
-            v: Value (0-100)
-            
-        Returns:
-            Tuple of (r, g, b) values (0-255)
-        """
-        s = s / 100.0
-        v = v / 100.0
-        h = h / 60.0
-        
-        c = v * s
-        x = c * (1 - abs((h % 2) - 1))
-        m = v - c
-        
-        if h < 1:
-            r, g, b = c, x, 0
-        elif h < 2:
-            r, g, b = x, c, 0
-        elif h < 3:
-            r, g, b = 0, c, x
-        elif h < 4:
-            r, g, b = 0, x, c
-        elif h < 5:
-            r, g, b = x, 0, c
-        else:
-            r, g, b = c, 0, x
-        
-        return (
-            int((r + m) * 255),
-            int((g + m) * 255),
-            int((b + m) * 255)
-        )
     
     def _render_brightness_bar(self):
         """Render the brightness bar interface."""
@@ -711,7 +674,7 @@ class DynamicMenu:
         
         # Show current hue color on LEDs immediately
         if self.led_controller:
-            r, g, b = self._hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
+            r, g, b = hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
             self.led_controller.set_color(r, g, b)
         
         # Render the hue bar interface
