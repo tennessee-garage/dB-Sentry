@@ -38,6 +38,9 @@ class UserSettings:
             "display_brightness": 180,  # Default OLED contrast
             "led_brightness": 255,       # Default LED brightness (full)
             "orientation": "left",       # Default orientation (knob on left)
+            "alert_hue_normal": 0.33,    # Hue for normal (green, 120 degrees)
+            "alert_hue_warn": 0.167,     # Hue for warn (yellow, 60 degrees)
+            "alert_hue_alert": 0.0,      # Hue for alert (red, 0 degrees)
         }
     
     def _load_or_create(self):
@@ -117,6 +120,34 @@ class UserSettings:
             self.set("orientation", value)
         else:
             logger.warning(f"Invalid orientation value: {value}")
+    
+    def get_alert_hue(self, alert_type: str) -> float:
+        """Get hue value for alert type (0.0-1.0).
+        
+        Args:
+            alert_type: 'normal', 'warn', or 'alert'
+            
+        Returns:
+            Hue value from 0.0 to 1.0
+        """
+        key = f"alert_hue_{alert_type}"
+        default = self._get_defaults().get(key, 0.0)
+        value = self.get(key, default)
+        return max(0.0, min(1.0, float(value)))
+    
+    def set_alert_hue(self, alert_type: str, value: float):
+        """Set hue value for alert type (0.0-1.0).
+        
+        Args:
+            alert_type: 'normal', 'warn', or 'alert'
+            value: Hue value from 0.0 to 1.0
+        """
+        if alert_type in ["normal", "warn", "alert"]:
+            value = max(0.0, min(1.0, float(value)))  # Clamp to 0.0-1.0
+            key = f"alert_hue_{alert_type}"
+            self.set(key, value)
+        else:
+            logger.warning(f"Invalid alert type: {alert_type}")
 
 
 # Global settings instance

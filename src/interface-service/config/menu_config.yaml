@@ -21,12 +21,20 @@ menus:
       - { text: "Orientation", type: "submenu", submenu: "orientation" }
       - { text: "Display brightness", type: "brightness_bar", function: "set_display_brightness", min: 0, max: 255 }
       - { text: "LED brightness", type: "brightness_bar", function: "set_led_brightness", min: 0, max: 255 }
+      - { text: "Alert Colors", type: "submenu", submenu: "alert_colors" }
       - { text: "Back", type: "back" }
 
   orientation:
     items:
       - { text: "Knob left {orientation_left_check}", type: "checkbox", group: "orientation", value: "left", function: "set_orientation_left" }
       - { text: "Knob right {orientation_right_check}", type: "checkbox", group: "orientation", value: "right", function: "set_orientation_right" }
+      - { text: "Back", type: "back" }
+
+  alert_colors:
+    items:
+      - { text: "Normal Color", type: "hue_bar", alert_type: "normal", function: "set_alert_hue_normal" }
+      - { text: "Warn Color", type: "hue_bar", alert_type: "warn", function: "set_alert_hue_warn" }
+      - { text: "Alert Color", type: "hue_bar", alert_type: "alert", function: "set_alert_hue_alert" }
       - { text: "Back", type: "back" }
 
   about:

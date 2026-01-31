@@ -36,16 +36,18 @@ class DynamicMenu:
     
     INACTIVITY_TIMEOUT = 60  # Seconds before display sleeps
     
-    def __init__(self, display: OledDisplay, config_path: Optional[str] = None, led_controller=None):
+    def __init__(self, display: OledDisplay, config_path: Optional[str] = None, led_controller=None, led_ipc_server=None):
         """Initialize dynamic menu system.
         
         Args:
             display: OledDisplay instance
             config_path: Path to menu_config.yaml
             led_controller: Optional LEDController instance for brightness control
+            led_ipc_server: Optional LEDIPCServer instance for pausing updates during hue adjustment
         """
         self.display = display
         self.led_controller = led_controller
+        self.led_ipc_server = led_ipc_server
         
         # Load menu configuration
         config_file: Path
@@ -64,6 +66,7 @@ class DynamicMenu:
         # Edit mode state
         self.edit_mode: bool = False
         self.edit_value: int = 0
+        self.edit_value_float: float = 0.0  # For hue values (0.0-1.0)
         self.edit_config: Dict = {}
         
         # LED state tracking for brightness adjustment
@@ -92,6 +95,9 @@ class DynamicMenu:
             "set_orientation_right": self._set_orientation_right,
             "set_display_brightness": self._set_display_brightness,
             "set_led_brightness": self._set_led_brightness,
+            "set_alert_hue_normal": self._set_alert_hue_normal,
+            "set_alert_hue_warn": self._set_alert_hue_warn,
+            "set_alert_hue_alert": self._set_alert_hue_alert,
         }
         
         # Apply saved user settings on startup
@@ -355,37 +361,65 @@ class DynamicMenu:
                 min_val = self.edit_config.get("min", 0)
                 max_val = self.edit_config.get("max", 255)
                 step = (max_val - min_val) / bar_width  # Each step = 1 pixel
+                
+                old_value = self.edit_value
+                self.edit_value += (step if delta < 0 else -step)
+                
+                # Clamp to min/max
+                self.edit_value = max(
+                    self.edit_config.get("min", 0),
+                    min(self.edit_config.get("max", 255), self.edit_value)
+                )
+                # Round to nearest integer for brightness values
+                self.edit_value = int(round(self.edit_value))
+                
+                # Apply display brightness in real-time for immediate feedback
+                func_name = self.edit_config.get("function", "")
+                if "display_brightness" in func_name:
+                    # Remap 0-255 to 5-255 for actual hardware effective range
+                    # The SSD1306 doesn't get much dimmer below ~5
+                    hardware_contrast = int(5 + (self.edit_value / 255.0) * (255 - 5))
+                    self.display.set_contrast(hardware_contrast)
+                elif "led_brightness" in func_name and self.showing_rainbow:
+                    # Apply LED brightness in real-time for rainbow pattern
+                    if self.led_controller:
+                        self.led_controller.set_brightness(self.edit_value)
+                
+                # Refresh display
+                self._render_brightness_bar()
+            
+            elif self.edit_config.get("type") == "hue_bar":
+                # Hue bar mode - adjust hue value (0.0-1.0)
+                bar_width = 110  # Must match _render_hue_bar
+                step = 1.0 / bar_width  # Each step = 1 pixel
+                
+                self.edit_value_float += (step if delta < 0 else -step)
+                
+                # Clamp to 0.0-1.0
+                self.edit_value_float = max(0.0, min(1.0, self.edit_value_float))
+                
+                # Show hue on LEDs in real-time
+                if self.led_controller:
+                    r, g, b = self._hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
+                    self.led_controller.set_color(r, g, b)
+                
+                # Refresh display
+                self._render_hue_bar()
             else:
                 # Standard edit mode uses smaller steps
                 step = 1 if abs(delta) == 1 else 5
-            
-            old_value = self.edit_value
-            self.edit_value += (step if delta < 0 else -step)
-            
-            # Clamp to min/max
-            self.edit_value = max(
-                self.edit_config.get("min", 0),
-                min(self.edit_config.get("max", 255), self.edit_value)
-            )
-            # Round to nearest integer for brightness values
-            self.edit_value = int(round(self.edit_value))
-            
-            # Apply display brightness in real-time for immediate feedback
-            func_name = self.edit_config.get("function", "")
-            if "display_brightness" in func_name:
-                # Remap 0-255 to 5-255 for actual hardware effective range
-                # The SSD1306 doesn't get much dimmer below ~5
-                hardware_contrast = int(5 + (self.edit_value / 255.0) * (255 - 5))
-                self.display.set_contrast(hardware_contrast)
-            elif "led_brightness" in func_name and self.showing_rainbow:
-                # Apply LED brightness in real-time for rainbow pattern
-                if self.led_controller:
-                    self.led_controller.set_brightness(self.edit_value)
-            
-            # Refresh display - check if we're in brightness bar mode
-            if self.edit_config.get("type") == "brightness_bar":
-                self._render_brightness_bar()
-            else:
+                
+                old_value = self.edit_value
+                self.edit_value += (step if delta < 0 else -step)
+                
+                # Clamp to min/max
+                self.edit_value = max(
+                    self.edit_config.get("min", 0),
+                    min(self.edit_config.get("max", 255), self.edit_value)
+                )
+                # Round to nearest integer for brightness values
+                self.edit_value = int(round(self.edit_value))
+                
                 with self.refresh_lock:
                     self._refresh_current_menu()
         else:
@@ -432,6 +466,8 @@ class DynamicMenu:
             self._enter_edit_mode(item)
         elif item_type == "brightness_bar":
             self._enter_brightness_bar_mode(item)
+        elif item_type == "hue_bar":
+            self._enter_hue_bar_mode(item)
         elif item_type == "action":
             self._handle_action(item)
     
@@ -624,15 +660,88 @@ class DynamicMenu:
         # Display the image (device handles rotation automatically)
         self.display.device.display(image)
     
+    def _render_hue_bar(self):
+        """Render the hue bar interface for alert color selection."""
+        # Create image
+        image = Image.new('1', (self.display.device.width, self.display.device.height), 0)
+        draw = ImageDraw.Draw(image)
+        
+        # Line 1: Hue bar with cursor
+        bar_x = 4
+        bar_y = 4
+        bar_width = 110
+        bar_height = 8
+        
+        # Calculate cursor position based on hue value (0.0-1.0)
+        cursor_pos = int(bar_x + bar_width * self.edit_value_float)
+        
+        # Draw bar outline
+        draw.rectangle([(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)], outline=1, fill=0)
+        
+        # Draw cursor (a small vertical line)
+        cursor_width = 2
+        draw.rectangle([(cursor_pos - 1, bar_y - 1), (cursor_pos + 1, bar_y + bar_height + 1)], outline=1, fill=0)
+        
+        # Line 2: Labels and value
+        # Left label (0), right label (1), and current value
+        draw.text((4, 20), "0", fill=1)
+        draw.text((110, 20), "1", fill=1)
+        value_str = f"{self.edit_value_float:.2f}"
+        draw.text((55, 20), value_str, fill=1)
+        
+        # Display the image
+        self.display.device.display(image)
+    
+    def _enter_hue_bar_mode(self, item: Dict):
+        """Enter hue bar mode for alert color selection.
+        
+        Args:
+            item: Hue bar item configuration
+        """
+        # Pause LED IPC updates while adjusting colors
+        if self.led_ipc_server:
+            self.led_ipc_server.pause_updates = True
+        
+        self.edit_mode = True
+        self.edit_config = item
+        
+        # Get current hue value
+        alert_type = item.get("alert_type", "normal")
+        self.edit_value_float = user_settings.get_alert_hue(alert_type)
+        
+        # Show current hue color on LEDs immediately
+        if self.led_controller:
+            r, g, b = self._hsv_to_rgb(self.edit_value_float * 360.0, 100, 100)
+            self.led_controller.set_color(r, g, b)
+        
+        # Render the hue bar interface
+        self._render_hue_bar()
+    
     def _save_edit_value(self):
         """Save the edited value."""
-        func_name = self.edit_config.get("function")
-        if func_name:
-            func = self.function_registry.get(func_name)
-            if func:
-                func(self.edit_value)
+        if self.edit_config.get("type") == "hue_bar":
+            # Hue bar mode - save float value
+            alert_type = self.edit_config.get("alert_type", "normal")
+            func_name = self.edit_config.get("function")
+            if func_name:
+                func = self.function_registry.get(func_name)
+                if func:
+                    func(self.edit_value_float)
+            
+            # Resume LED IPC updates
+            if self.led_ipc_server:
+                self.led_ipc_server.pause_updates = False
+                # Render status history once to restore display
+                self.led_ipc_server._render_status_history()
+        else:
+            # Regular edit mode or brightness bar - save integer value
+            func_name = self.edit_config.get("function")
+            if func_name:
+                func = self.function_registry.get(func_name)
+                if func:
+                    func(self.edit_value)
         
-        # Clear rainbow pattern and restore LED state after brightness adjustment
+        # Clear rainbow pattern and restore LED state after adjustment
         if self.showing_rainbow and self.led_controller:
             self.showing_rainbow = False
             # Clear the LEDs to return to previous state (off)
@@ -684,3 +793,15 @@ class DynamicMenu:
         user_settings.set_led_brightness(value)
         if self.led_controller:
             self.led_controller.set_brightness(value)
+    
+    def _set_alert_hue_normal(self, value: float):
+        """Set hue for normal alert status."""
+        user_settings.set_alert_hue("normal", value)
+    
+    def _set_alert_hue_warn(self, value: float):
+        """Set hue for warn alert status."""
+        user_settings.set_alert_hue("warn", value)
+    
+    def _set_alert_hue_alert(self, value: float):
+        """Set hue for alert alert status."""
+        user_settings.set_alert_hue("alert", value)

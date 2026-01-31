@@ -38,7 +38,8 @@ class SentryHubInterface:
         # Initialize dynamic menu
         self.menu = DynamicMenu(
             display=self.display,
-            led_controller=self.led_controller
+            led_controller=self.led_controller,
+            led_ipc_server=self.led_ipc_server
         )
         logger.info("Dynamic menu initialized")
         
