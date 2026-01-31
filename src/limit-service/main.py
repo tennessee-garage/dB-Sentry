@@ -11,6 +11,7 @@ import threading
 from mqtt.dba_message import DBAMessage
 from mqtt.factory import create_message
 import alert
+from ipc.led_ipc_client import RemoteLEDClient
 
 
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +26,8 @@ monitor = alert.Monitor(window_seconds)
 
 # lock to protect sensor_band_values (callback runs in MQTT thread)
 sensor_lock = threading.Lock()
+
+led = RemoteLEDClient()
 
 def on_message(topic, value):
 	"""Handle incoming MQTT messages. Topic format: db_sentry/$sensor/$band
@@ -61,17 +64,20 @@ def check_alerts():
 			alerting += 1
 			influx.set_sensor_alarm_state(sensor, "ALERT")
 			sensors_normal[sensor] = False
+			led.push_alert_status('alert')
 		elif sensors[sensor] > sensor_limits[sensor] * cfg.warn_percent:
 			# Warn if we're over the warn threshold
 			logger.debug(f"Warning: Sensor {sensor} average {sensors[sensor]:.2f} exceeds WARN threshold")
 			influx.set_sensor_alarm_state(sensor, "WARN")
 			sensors_normal[sensor] = False
+			led.push_alert_status('warn')
 		else:
 			# Note normal state
 			logger.debug(f"Sensor {sensor} average {sensors[sensor]:.2f} is within normal limits")
 			# To save writes, only set NORMAL if we were previously not normal
 			if not sensors_normal[sensor]:
 				influx.set_sensor_alarm_state(sensor, "NORMAL")
+			led.push_alert_status('normal')
 
 			sensors_normal[sensor] = True
 	

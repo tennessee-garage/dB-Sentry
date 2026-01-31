@@ -126,6 +126,69 @@ class LEDController:
         """
         return self.brightness
     
+    def set_pixel(self, index: int, r: int, g: int, b: int):
+        """Set a single pixel to the given RGB color.
+        
+        Args:
+            index: Pixel index (0 to count-1)
+            r: Red component (0-255)
+            g: Green component (0-255)
+            b: Blue component (0-255)
+        """
+        if index < 0 or index >= self.count:
+            logger.warning(f"Pixel index {index} out of range (0-{self.count-1})")
+            return
+        
+        # Apply brightness scaling
+        r = int(r * self.brightness / 255)
+        g = int(g * self.brightness / 255)
+        b = int(b * self.brightness / 255)
+        
+        if self.simulate:
+            logger.debug(f"LED {index} set to R={r} G={g} B={b} (simulated)")
+            return
+        
+        if self.strip is None or self.Color is None:
+            logger.warning("LED hardware not initialized; running in simulate mode")
+            logger.debug(f"LED {index} set to R={r} G={g} B={b} (simulated)")
+            return
+        
+        try:
+            self.strip.setPixelColor(index, self.Color(r, g, b))
+            if hasattr(self.strip, 'show'):
+                self.strip.show()
+        except Exception as e:
+            logger.error(f"Failed to set pixel {index}: {e}")
+    
+    def set_pixels(self, pixels: list):
+        """Set multiple pixels at once.
+        
+        Args:
+            pixels: List of tuples (index, r, g, b)
+        """
+        if self.simulate:
+            for index, r, g, b in pixels:
+                logger.debug(f"LED {index} set to R={r} G={g} B={b} (simulated)")
+            return
+        
+        if self.strip is None or self.Color is None:
+            logger.warning("LED hardware not initialized; running in simulate mode")
+            return
+        
+        try:
+            for index, r, g, b in pixels:
+                if 0 <= index < self.count:
+                    # Apply brightness scaling
+                    r = int(r * self.brightness / 255)
+                    g = int(g * self.brightness / 255)
+                    b = int(b * self.brightness / 255)
+                    self.strip.setPixelColor(index, self.Color(r, g, b))
+            
+            if hasattr(self.strip, 'show'):
+                self.strip.show()
+        except Exception as e:
+            logger.error(f"Failed to set pixels: {e}")
+
     def clear(self):
         """Turn off all LEDs (set to black)."""
         self.set_color(0, 0, 0)

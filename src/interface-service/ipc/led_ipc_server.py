@@ -8,6 +8,7 @@ import logging
 import os
 import socket
 import threading
+from collections import deque
 from pathlib import Path
 from typing import Optional, Callable
 from interface.led_controller import LEDController
@@ -32,6 +33,10 @@ class LEDIPCServer:
         self.server_socket: Optional[socket.socket] = None
         self.running = False
         self.thread: Optional[threading.Thread] = None
+        
+        # Status history FIFO (max 10 entries)
+        # Stores tuples of (status, timestamp)
+        self.status_history = deque(maxlen=10)
     
     def start(self):
         """Start the IPC server in a background thread."""
@@ -141,6 +146,14 @@ class LEDIPCServer:
                 self.led.set_color(0, 0, 0)
                 response = {'status': 'ok', 'command': command}
             
+            elif command == 'push_status':
+                alert_status = request.get('status', 'normal')  # 'normal', 'warn', 'alert'
+                if alert_status in ['normal', 'warn', 'alert']:
+                    self._push_status(alert_status)
+                    response = {'status': 'ok', 'command': command, 'alert_status': alert_status}
+                else:
+                    response = {'status': 'error', 'message': f'Invalid status: {alert_status}'}
+            
             else:
                 response = {'status': 'error', 'message': f'Unknown command: {command}'}
             
@@ -159,3 +172,66 @@ class LEDIPCServer:
                 conn.send(json.dumps({'status': 'error', 'message': str(e)}).encode('utf-8'))
             except Exception:
                 pass
+    
+    def _push_status(self, status: str):
+        """Push a status update to the FIFO and render to LEDs.
+        
+        Args:
+            status: Status string ('normal', 'warn', 'alert')
+        """
+        self.status_history.append(status)
+        self._render_status_history()
+    
+    def _render_status_history(self):
+        """Render the status history to the LED strip.
+        
+        LED layout:
+        - LEDs 0-9 (top row): Status history as FIFO
+          - LED 9 = Most recent (First In)
+          - LED 0 = Oldest (First Out)
+          - Empty slots are unlit
+        - LEDs 10-19 (bottom row): All lit with color of most recent status
+        
+        Colors:
+        - Normal = Green (0, 255, 0)
+        - Warn = Yellow (255, 255, 0)
+        - Alert = Red (255, 0, 0)
+        """
+        color_map = {
+            'normal': (0, 255, 0),    # Green
+            'warn': (255, 255, 0),    # Yellow
+            'alert': (255, 0, 0)      # Red
+        }
+        
+        pixels = []
+        
+        # Top LEDs (0-9): Status history FIFO
+        # Convert deque to list for indexing
+        history_list = list(self.status_history)
+        history_len = len(history_list)
+        
+        for i in range(10):
+            if i < history_len:
+                # LED 9 is the most recent, LED 0 is oldest
+                # So we index from the end of the history
+                status = history_list[history_len - 10 + i]
+                r, g, b = color_map.get(status, (0, 0, 0))
+            else:
+                # Empty slot - unlit
+                r, g, b = 0, 0, 0
+            
+            pixels.append((i, r, g, b))
+        
+        # Bottom LEDs (10-19): Color of most recent status
+        if history_list:
+            most_recent = history_list[-1]
+            r, g, b = color_map.get(most_recent, (0, 0, 0))
+        else:
+            # No status yet - all off
+            r, g, b = 0, 0, 0
+        
+        for i in range(10, 20):
+            pixels.append((i, r, g, b))
+        
+        # Send to LED controller
+        self.led.set_pixels(pixels)
