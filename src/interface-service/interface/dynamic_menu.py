@@ -278,8 +278,10 @@ class DynamicMenu:
                     # Add individual sensor lines
                     if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
                         for sensor_name, mps in sorted(self.led_ipc_server.sensor_data.items()):
+                            # Strip 'sensor-' prefix if present
+                            display_name = sensor_name.removeprefix('sensor-')
                             sensor_item = {
-                                "text": f"  {sensor_name}: {mps:.1f} mps",
+                                "text": f"  {display_name}: {mps:.1f} mps",
                                 "type": "display_only"
                             }
                             expanded_items.append(sensor_item)

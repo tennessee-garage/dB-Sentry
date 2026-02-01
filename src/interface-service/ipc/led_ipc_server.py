@@ -200,9 +200,9 @@ class LEDIPCServer:
         """Render the status history to the LED strip.
         
         LED layout:
-        - LEDs 0-9 (top row): Status history as FIFO
-          - LED 9 = Most recent (First In)
-          - LED 0 = Oldest (First Out)
+        - LEDs 0-9 (top row): Status history as FIFO (right-justified)
+          - LED 9 = Most recent
+          - LED 0 = Oldest (or first LED if fewer than 10)
           - Empty slots are unlit
         - LEDs 10-19 (bottom row): All lit with color of most recent status
         
@@ -210,21 +210,27 @@ class LEDIPCServer:
         """
         pixels = []
         
-        # Top LEDs (0-9): Status history FIFO
+        # Top LEDs (0-9): Status history FIFO (right-justified)
         # Convert deque to list for indexing
         history_list = list(self.status_history)
         history_len = len(history_list)
         
         for i in range(10):
-            if i < history_len:
-                # LED 9 is the most recent, LED 0 is oldest
-                # So we index from the end of the history
-                status = history_list[history_len - 10 + i]
-                # Get hue from user settings and convert to RGB
-                hue = user_settings.get_alert_hue(status)
-                r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
+            if history_len > 0:
+                # Right-justify: empty slots on left, data on right
+                data_start_led = 10 - history_len
+                if i < data_start_led:
+                    # Empty slot - unlit
+                    r, g, b = 0, 0, 0
+                else:
+                    # Data slot: index into history_list
+                    history_index = i - data_start_led
+                    status = history_list[history_index]
+                    # Get hue from user settings and convert to RGB
+                    hue = user_settings.get_alert_hue(status)
+                    r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
             else:
-                # Empty slot - unlit
+                # No history - all unlit
                 r, g, b = 0, 0, 0
             
             pixels.append((i, r, g, b))
