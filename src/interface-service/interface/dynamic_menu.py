@@ -469,15 +469,35 @@ class DynamicMenu:
             self._refresh_current_menu()
             return
         
-        # Get selected item
+        # Get selected item - must reconstruct expanded items like in _refresh_current_menu
         menu_config = self._get_current_menu_config()
         items = menu_config.get("items", [])
+        
+        # Expand sensor_summary items into actual sensor list (same as _refresh_current_menu)
+        expanded_items = []
+        for item in items:
+            if item.get("type") == "sensor_summary":
+                # Add the summary line
+                expanded_items.append(item)
+                # Add individual sensor lines
+                if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
+                    for sensor_name, mps in sorted(self.led_ipc_server.sensor_data.items()):
+                        # Strip 'sensor-' prefix if present
+                        display_name = sensor_name.removeprefix('sensor-')
+                        sensor_item = {
+                            "text": f"  {display_name}: {mps:.1f} mps",
+                            "type": "display_only"
+                        }
+                        expanded_items.append(sensor_item)
+            else:
+                expanded_items.append(item)
+        
         selected_index = self.display.get_selected_item_index()
         
-        if selected_index >= len(items):
+        if selected_index >= len(expanded_items):
             return
         
-        item = items[selected_index]
+        item = expanded_items[selected_index]
         item_type = item.get("type", "static")
         
         if item_type == "back":
