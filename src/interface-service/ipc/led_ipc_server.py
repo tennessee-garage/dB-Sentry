@@ -155,8 +155,8 @@ class LEDIPCServer:
                 response = {'status': 'ok', 'command': command}
             
             elif command == 'push_status':
-                alert_status = request.get('status', 'normal')  # 'normal', 'warn', 'alert'
-                if alert_status in ['normal', 'warn', 'alert']:
+                alert_status = request.get('status', 'normal')  # 'normal', 'warn', 'alert', 'none'
+                if alert_status in ['normal', 'warn', 'alert', 'none']:
                     self._push_status(alert_status)
                     response = {'status': 'ok', 'command': command, 'alert_status': alert_status}
                 else:
@@ -190,7 +190,7 @@ class LEDIPCServer:
         """Push a status update to the FIFO and render to LEDs.
         
         Args:
-            status: Status string ('normal', 'warn', 'alert')
+            status: Status string ('normal', 'warn', 'alert', 'none')
         """
         self.status_history.append(status)
         if not self.pause_updates:
@@ -226,9 +226,13 @@ class LEDIPCServer:
                     # Data slot: index into history_list
                     history_index = i - data_start_led
                     status = history_list[history_index]
-                    # Get hue from user settings and convert to RGB
-                    hue = user_settings.get_alert_hue(status)
-                    r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
+                    # Handle 'none' status as unlit
+                    if status == 'none':
+                        r, g, b = 0, 0, 0
+                    else:
+                        # Get hue from user settings and convert to RGB
+                        hue = user_settings.get_alert_hue(status)
+                        r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
             else:
                 # No history - all unlit
                 r, g, b = 0, 0, 0
@@ -238,8 +242,12 @@ class LEDIPCServer:
         # Bottom LEDs (10-19): Color of most recent status
         if history_list:
             most_recent = history_list[-1]
-            hue = user_settings.get_alert_hue(most_recent)
-            r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
+            # Handle 'none' status as unlit
+            if most_recent == 'none':
+                r, g, b = 0, 0, 0
+            else:
+                hue = user_settings.get_alert_hue(most_recent)
+                r, g, b = hsv_to_rgb(hue * 360.0, 100, 100)
         else:
             # No status yet - all off
             r, g, b = 0, 0, 0

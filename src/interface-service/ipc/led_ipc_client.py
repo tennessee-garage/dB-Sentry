@@ -122,14 +122,14 @@ class RemoteLEDClient:
         - Bottom 10 LEDs all show the color of the most recent status
         
         Args:
-            status: Alert status - 'normal' (green), 'warn' (yellow), 'alert' (red)
+            status: Alert status - 'normal' (green), 'warn' (yellow), 'alert' (red), 'none' (unlit)
             
         Returns:
             True if successful, False otherwise
         """
-        if status not in ['normal', 'warn', 'alert']:
-            logger.warning(f"Invalid alert status: {status}, using 'normal'")
-            status = 'normal'
+        if status not in ['normal', 'warn', 'alert', 'none']:
+            logger.warning(f"Invalid alert status: {status}, using 'none'")
+            status = 'none'
         
         try:
             response = self._send_command({

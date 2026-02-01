@@ -78,6 +78,7 @@ def check_alerts():
 	sensors = monitor.sensor_averages()
 	alerting = 0
 
+	max_alert_level = 0
 	for sensor in sensors.keys():
 		sensors_normal.setdefault(sensor, False)
 
@@ -94,23 +95,34 @@ def check_alerts():
 			alerting += 1
 			influx.set_sensor_alarm_state(sensor, "ALERT")
 			sensors_normal[sensor] = False
-			interface.push_alert_status('alert')
+			max_alert_level = max(max_alert_level, 3)
 		elif sensors[sensor] > sensor_limits[sensor] * cfg.warn_percent:
 			# Warn if we're over the warn threshold
 			logger.debug(f"Warning: Sensor {sensor} average {sensors[sensor]:.2f} exceeds WARN threshold")
 			influx.set_sensor_alarm_state(sensor, "WARN")
 			sensors_normal[sensor] = False
-			interface.push_alert_status('warn')
+			max_alert_level = max(max_alert_level, 2)
 		else:
 			# Note normal state
 			logger.debug(f"Sensor {sensor} average {sensors[sensor]:.2f} is within normal limits")
 			# To save writes, only set NORMAL if we were previously not normal
 			if not sensors_normal[sensor]:
 				influx.set_sensor_alarm_state(sensor, "NORMAL")
-			interface.push_alert_status('normal')
+			max_alert_level = max(max_alert_level, 1)
 
 			sensors_normal[sensor] = True
 	
+	# Only push one status for all sensors, whatever is the highest level
+	if max_alert_level == 3:
+		interface.push_alert_status('alert')
+	elif max_alert_level == 2:
+		interface.push_alert_status('warn')
+	elif max_alert_level == 1:
+		interface.push_alert_status('normal')
+	else:
+		interface.push_alert_status('none')
+
+
 	if alerting >= cfg.min_triggering_sensors:
 		logger.info(f"ALERT TRIGGERED: {alerting} sensors over the threshold")
 
