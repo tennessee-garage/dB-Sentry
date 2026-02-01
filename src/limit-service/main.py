@@ -11,7 +11,7 @@ import threading
 from mqtt.dba_message import DBAMessage
 from mqtt.factory import create_message
 import alert
-from ipc.led_ipc_client import RemoteLEDClient
+from ipc.interface_ipc_client import RemoteInterfaceClient
 
 
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +31,33 @@ monitor = alert.Monitor(window_seconds)
 # lock to protect sensor_band_values (callback runs in MQTT thread)
 sensor_lock = threading.Lock()
 
-led = RemoteLEDClient()
+interface = RemoteInterfaceClient()
+
+# Track time for periodic sensor updates (every 5 minutes)
+SENSOR_UPDATE_INTERVAL = 300  # seconds
+last_sensor_update = time.time()
+
+def get_sensor_measurements_per_second() -> Dict[str, float]:
+	"""Calculate measurements per second for each sensor in the last 5 minutes.
+	
+	Returns:
+		Dictionary mapping sensor name to measurements per second
+	"""
+	measurements = {}
+	now = time.time()
+	
+	with sensor_lock:
+		for sensor, bands in monitor.sensors.items():
+			total_readings = 0
+			for window in bands.values():
+				# Count readings in the window
+				total_readings += len(window.dq)
+			
+			if total_readings > 0:
+				# Calculate rate: total readings / window size in seconds
+				measurements[sensor] = total_readings / window_seconds
+	
+	return measurements
 
 def on_message(topic, value):
 	"""Handle incoming MQTT messages. Topic format: db_sentry/$sensor/$band
@@ -68,20 +94,20 @@ def check_alerts():
 			alerting += 1
 			influx.set_sensor_alarm_state(sensor, "ALERT")
 			sensors_normal[sensor] = False
-			led.push_alert_status('alert')
+			interface.push_alert_status('alert')
 		elif sensors[sensor] > sensor_limits[sensor] * cfg.warn_percent:
 			# Warn if we're over the warn threshold
 			logger.debug(f"Warning: Sensor {sensor} average {sensors[sensor]:.2f} exceeds WARN threshold")
 			influx.set_sensor_alarm_state(sensor, "WARN")
 			sensors_normal[sensor] = False
-			led.push_alert_status('warn')
+			interface.push_alert_status('warn')
 		else:
 			# Note normal state
 			logger.debug(f"Sensor {sensor} average {sensors[sensor]:.2f} is within normal limits")
 			# To save writes, only set NORMAL if we were previously not normal
 			if not sensors_normal[sensor]:
 				influx.set_sensor_alarm_state(sensor, "NORMAL")
-			led.push_alert_status('normal')
+			interface.push_alert_status('normal')
 
 			sensors_normal[sensor] = True
 	
@@ -118,6 +144,17 @@ if __name__ == '__main__':
 				logger.info(f"Updating monitor window to {window_seconds} seconds")
 				monitor.update_window_seconds(window_seconds)
 				window_seconds_changed_event.clear()
+			
+			# Update sensor measurements to LED every 5 minutes
+			if time.time() - last_sensor_update >= SENSOR_UPDATE_INTERVAL:
+				measurements = get_sensor_measurements_per_second()
+				if measurements:
+					try:
+						interface.update_sensors(measurements)
+						logger.info(f"Updated interface with {len(measurements)} active sensors")
+					except Exception as e:
+						logger.error(f"Failed to update interface sensors: {e}")
+				last_sensor_update = time.time()
 			
 			check_alerts()
 			time.sleep(1)

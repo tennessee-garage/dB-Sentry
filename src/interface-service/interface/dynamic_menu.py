@@ -92,6 +92,7 @@ class DynamicMenu:
             "get_uptime": get_uptime,
             "get_service_status": get_service_status,
             "get_load_average": get_load_average,
+            "get_sensor_count": self._get_sensor_count,
             "set_orientation_left": self._set_orientation_left,
             "set_orientation_right": self._set_orientation_right,
             "set_display_brightness": self._set_display_brightness,
@@ -237,6 +238,11 @@ class DynamicMenu:
             # Don't show value in menu, just the label
             pass
         
+        elif item_type == "sensor_summary":
+            # Show sensor count
+            sensor_count = self._get_sensor_count()
+            text = text.replace("{sensor_count}", str(sensor_count))
+        
         return text
     
     def _get_current_menu_config(self) -> Dict:
@@ -263,8 +269,25 @@ class DynamicMenu:
             # Save current position if preserving
             saved_scroll = self.display.scroll_index if preserve_position else 0
             
-            # Refresh dynamic items on navigate
+            # Expand sensor_summary items into actual sensor list
+            expanded_items = []
             for item in items:
+                if item.get("type") == "sensor_summary":
+                    # Add the summary line
+                    expanded_items.append(item)
+                    # Add individual sensor lines
+                    if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
+                        for sensor_name, mps in sorted(self.led_ipc_server.sensor_data.items()):
+                            sensor_item = {
+                                "text": f"  {sensor_name}: {mps:.1f} mps",
+                                "type": "display_only"
+                            }
+                            expanded_items.append(sensor_item)
+                else:
+                    expanded_items.append(item)
+            
+            # Refresh dynamic items on navigate
+            for item in expanded_items:
                 if item.get("type") == "dynamic":
                     func_name = item.get("function")
                     if func_name:
@@ -272,7 +295,7 @@ class DynamicMenu:
                         self.refresh_timers[func_name] = time.time()
             
             # Format menu text
-            menu_texts: List[MenuItem] = [self._format_menu_text(item) for item in items]
+            menu_texts: List[MenuItem] = [self._format_menu_text(item) for item in expanded_items]
             
             # Create static Menu for display
             menu = Menu(menu_texts)
@@ -768,3 +791,13 @@ class DynamicMenu:
     def _set_alert_hue_alert(self, value: float):
         """Set hue for alert alert status."""
         user_settings.set_alert_hue("alert", value)
+    
+    def _get_sensor_count(self) -> int:
+        """Get count of active sensors.
+        
+        Returns:
+            Number of active sensors
+        """
+        if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
+            return len(self.led_ipc_server.sensor_data)
+        return 0

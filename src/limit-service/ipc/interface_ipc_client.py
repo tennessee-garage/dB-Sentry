@@ -1,6 +1,6 @@
-"""Client for remote LED control via IPC.
+"""Client for remote interface control via IPC.
 
-Used by limit-service to control LEDs managed by interface-service.
+Used by limit-service to communicate with interface-service.
 """
 
 import json
@@ -11,21 +11,21 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
-class RemoteLEDClient:
-    """Client for controlling LEDs on a remote interface-service via Unix socket."""
+class RemoteInterfaceClient:
+    """Client for communicating with interface-service via Unix socket."""
     
     DEFAULT_SOCKET_PATH = "/tmp/db-sentry-led-control.sock"
     
     def __init__(self, socket_path: Optional[str] = None):
-        """Initialize the remote LED client.
+        """Initialize the remote interface client.
         
         Args:
-            socket_path: Path to the LED IPC socket (default: /tmp/db-sentry-led-control.sock)
+            socket_path: Path to the interface IPC socket (default: /tmp/db-sentry-led-control.sock)
         """
         self.socket_path = socket_path or self.DEFAULT_SOCKET_PATH
     
     def _send_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a command to the LED server.
+        """Send a command to the interface server.
         
         Args:
             command: Command dictionary to send
@@ -49,11 +49,11 @@ class RemoteLEDClient:
             return response
         
         except FileNotFoundError:
-            raise ConnectionError(f"LED IPC socket not found at {self.socket_path}. Is interface-service running?")
+            raise ConnectionError(f"Interface IPC socket not found at {self.socket_path}. Is interface-service running?")
         except ConnectionRefusedError:
-            raise ConnectionError(f"Failed to connect to LED server at {self.socket_path}")
+            raise ConnectionError(f"Failed to connect to interface server at {self.socket_path}")
         except Exception as e:
-            raise ConnectionError(f"Error communicating with LED server: {e}")
+            raise ConnectionError(f"Error communicating with interface server: {e}")
     
     def set_color(self, r: int, g: int, b: int) -> bool:
         """Set the LED strip to a solid color.
@@ -75,7 +75,7 @@ class RemoteLEDClient:
             })
             return response.get('status') == 'ok'
         except ConnectionError as e:
-            logger.error(f"LED set_color failed: {e}")
+            logger.error(f"Interface set_color failed: {e}")
             return False
     
     def show_alert(self, level: str = 'warning') -> bool:
@@ -98,7 +98,7 @@ class RemoteLEDClient:
             })
             return response.get('status') == 'ok'
         except ConnectionError as e:
-            logger.error(f"LED show_alert failed: {e}")
+            logger.error(f"Interface show_alert failed: {e}")
             return False
     
     def clear(self) -> bool:
@@ -111,7 +111,7 @@ class RemoteLEDClient:
             response = self._send_command({'command': 'clear'})
             return response.get('status') == 'ok'
         except ConnectionError as e:
-            logger.error(f"LED clear failed: {e}")
+            logger.error(f"Interface clear failed: {e}")
             return False
     
     def push_alert_status(self, status: str) -> bool:
@@ -138,5 +138,25 @@ class RemoteLEDClient:
             })
             return response.get('status') == 'ok'
         except ConnectionError as e:
-            logger.error(f"LED push_alert_status failed: {e}")
+            logger.error(f"Interface push_alert_status failed: {e}")
+            return False
+
+    def update_sensors(self, sensors: dict) -> bool:
+        """Update the active sensor list with measurements per second.
+        
+        Args:
+            sensors: Dictionary mapping sensor_name (str) to measurements_per_second (float)
+                    Example: {'temperature': 10.5, 'pressure': 5.2}
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            response = self._send_command({
+                'command': 'update_sensors',
+                'sensors': sensors
+            })
+            return response.get('status') == 'ok'
+        except ConnectionError as e:
+            logger.error(f"Interface update_sensors failed: {e}")
             return False

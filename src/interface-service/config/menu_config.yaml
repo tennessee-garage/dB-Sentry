@@ -4,6 +4,7 @@ menus:
   main:
     items:
       - { text: "Status", type: "submenu", submenu: "status" }
+      - { text: "Sensors", type: "submenu", submenu: "sensors" }
       - { text: "Settings", type: "submenu", submenu: "settings" }
       - { text: "About", type: "submenu", submenu: "about" }
 
@@ -14,6 +15,12 @@ menus:
       - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
       - { text: "Service: {service_status}", type: "dynamic", function: "get_service_status", refresh: 10 }
       - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
+      - { text: "Back", type: "back" }
+
+  sensors:
+    items:
+      - { text: "Sensors: {sensor_count}", type: "sensor_summary", function: "get_sensor_count" }
+      # Sensor items will be dynamically added here
       - { text: "Back", type: "back" }
 
   settings:

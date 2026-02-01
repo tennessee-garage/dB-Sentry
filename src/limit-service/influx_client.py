@@ -26,7 +26,7 @@ class InfluxV1Client:
 		"""Find the currently active sensors from the InfluxDB."""
 		try:
 			sensors = []
-			result = self.client.query("SELECT LAST(value) FROM active_sensors GROUP BY sensor")
+			result = self.client.query("SELECT LAST(value) FROM active_sensors WHERE time > now() - 15m GROUP BY sensor")
 			if not isinstance(result, ResultSet):
 				return []
 
