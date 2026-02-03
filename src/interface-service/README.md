@@ -85,16 +85,16 @@ sudo journalctl -u interface-service -f
 Service management:
 ```bash
 # Check service status
-sudo systemctl status interface-service
+sudo systemctl status db-sentry-interface
 
 # Start the service
-sudo systemctl start interface-service
+sudo systemctl start db-sentry-interface
 
 # Stop the service
-sudo systemctl stop interface-service
+sudo systemctl stop db-sentry-interface
 
 # Restart the service
-sudo systemctl restart interface-service
+sudo systemctl restart db-sentry-interface
 ```
 
 ## Architecture
