@@ -451,9 +451,9 @@ class DynamicMenu:
         else:
             # Normal navigation
             if delta > 0:
-                self.move_cursor_down()
-            else:
                 self.move_cursor_up()
+            else:
+                self.move_cursor_down()
     
     def button_pressed(self):
         """Handle encoder button press."""
