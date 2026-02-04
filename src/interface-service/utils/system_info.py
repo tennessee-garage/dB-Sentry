@@ -146,7 +146,7 @@ def get_load_average() -> str:
             load_data = f.read().split()[:3]
         
         if len(load_data) >= 3:
-            return f"{load_data[0]} / {load_data[1]} / {load_data[2]}"
+            return f"{load_data[0]}/{load_data[1]}/{load_data[2]}"
         
         return "N/A"
     

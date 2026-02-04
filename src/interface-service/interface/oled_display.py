@@ -161,8 +161,8 @@ class OledDisplay:
         
         total_items = len(self.current_menu)
         
-        # Don't scroll past the last actual item (before the blank item)
-        if self.scroll_index >= total_items - 2:
+        # Don't scroll past the last valid item (menu frames only render up to len - 3)
+        if self.scroll_index >= total_items - 3:
             return
         
         self.scroll_index += 1

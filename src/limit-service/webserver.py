@@ -34,23 +34,84 @@ INDEX_HTML = """
   <head>
 	<meta charset="utf-8">
 	<title>Limit Service</title>
+	<script>
+	  async function loadLimits() {
+		try {
+		  const limitsResp = await fetch('/api/limits');
+		  const limits = await limitsResp.json();
+		  
+		  const windowResp = await fetch('/api/window_seconds');
+		  const windowData = await windowResp.json();
+		  
+		  document.getElementById('window_seconds').value = windowData.window_seconds;
+		  
+		  const container = document.getElementById('limits-container');
+		  container.innerHTML = '';
+		  
+		  if (Object.keys(limits).length === 0) {
+			container.innerHTML = '<p>No sensor limits configured yet.</p>';
+		  } else {
+			for (const [sensor, value] of Object.entries(limits)) {
+			  const div = document.createElement('div');
+			  const label = document.createElement('label');
+			  const input = document.createElement('input');
+			  input.type = 'text';
+			  input.name = sensor;
+			  input.value = value;
+			  label.appendChild(document.createTextNode(sensor + ': '));
+			  label.appendChild(input);
+			  div.appendChild(label);
+			  container.appendChild(div);
+			}
+		  }
+		} catch (error) {
+		  console.error('Error loading limits:', error);
+		}
+	  }
+	  
+	  window.addEventListener('load', loadLimits);
+	  
+	  async function handleSubmit(event) {
+		event.preventDefault();
+		const formData = new FormData(event.target);
+		const data = {};
+		
+		for (const [key, value] of formData.entries()) {
+		  if (value !== '') {
+			data[key] = isNaN(value) ? value : parseFloat(value);
+		  }
+		}
+		
+		try {
+		  const response = await fetch('/limits', {
+			method: 'POST',
+			headers: {
+			  'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(data)
+		  });
+		  
+		  if (response.ok) {
+			loadLimits();
+		  } else {
+			console.error('Error updating limits');
+		  }
+		} catch (error) {
+		  console.error('Error submitting limits:', error);
+		}
+	  }
+	</script>
   </head>
   <body>
 	<h1>Sensor Limits</h1>
 	  <div>
-		<label>Lookback window in seconds: <input type="text" name="window_seconds" value="{{ window_seconds }}"/></label>
+		<label>Lookback window in seconds: <input type="text" id="window_seconds" name="window_seconds"/></label>
 	  </div>
 	  <hr/>
-	<form method="post" action="/limits">
-	  {% if limits %}
-		{% for sensor, value in limits.items() %}
-		  <div>
-			<label>{{ sensor }}: <input type="text" name="{{ sensor }}" value="{{ value }}"/></label>
-		  </div>
-		{% endfor %}
-	  {% else %}
-		<p>No sensor limits configured yet.</p>
-	  {% endif %}
+	<form onsubmit="handleSubmit(event)">
+	  <div id="limits-container">
+		<p>Loading...</p>
+	  </div>
 	  <button type="submit">Save</button>
 	</form>
   </body>
@@ -59,66 +120,83 @@ INDEX_HTML = """
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-	# Fetch the active sensors, and any configured limits.  Merge them to show
-	# the limits for all active sensors, defaulting to zero if there is no limit set.
+	"""Serve the main UI page."""
+	return INDEX_HTML
+
+@app.get("/api/limits")
+async def get_limits():
+	"""Get all sensor limits as JSON.
+	
+	Returns only sensors that have active data or configured limits.
+	"""
 	active = influx.read_active_sensors()
 	limits = influx.read_sensor_limits()
-	active_limits: Dict[str, int] = {}
 	
+	result = {}
 	for sensor in active:
-		if sensor not in limits:
-			active_limits[sensor] = 0
-		else:
-			active_limits[sensor] = limits[sensor]
+		result[sensor] = limits.get(sensor, 0)
+	
+	return result
 
+@app.get("/api/window_seconds")
+async def get_window_seconds():
+	"""Get the current window seconds setting."""
 	try:
 		window_seconds = influx.read_window_seconds()
 	except Exception:
 		window_seconds = 30
-	template = Template(INDEX_HTML)
-	return template.render(limits=active_limits, window_seconds=window_seconds)
+	
+	return {"window_seconds": window_seconds}
 
 @app.post("/limits")
 async def update_limits(request: Request):
-	form = await request.form()
-	# process each form field; treat 'window_seconds' specially
-	updated: Dict[str, int] = {}
-	for key, val in form.items():
-		if val is None or not isinstance(val, str) or val == "":
-			continue
-		if key == 'window_seconds':
-			# handle later
-			continue
+	"""Update sensor limits and/or window_seconds from JSON payload.
+	
+	Expects JSON with sensor names as keys and numeric limits as values.
+	Optional 'window_seconds' key to update the monitoring window.
+	
+	Example: {"sensor1": 50, "sensor2": 75, "window_seconds": 60}
+	"""
+	try:
+		data = await request.json()
+	except Exception as e:
+		logger.error(f"Error parsing JSON: {e}")
+		return {"error": "Invalid JSON"}
+	
+	# Separate window_seconds from sensor limits
+	window_seconds = data.pop('window_seconds', None)
+	updated_sensors = {}
+	
+	# Process sensor limits
+	for sensor, limit in data.items():
 		try:
-			updated[key] = int(val)
-		except ValueError:
-			# ignore invalid numeric entries
-			updated[key] = 0
+			updated_sensors[sensor] = int(float(limit))
+		except (ValueError, TypeError):
+			logger.warning(f"Invalid limit value for {sensor}: {limit}")
 			continue
-
-	if updated:
-		logger.info(f"Updating {len(updated)} sensor limit(s)")
+	
+	# Update sensors
+	if updated_sensors:
+		logger.info(f"Updating {len(updated_sensors)} sensor limit(s)")
+		for sensor, limit in updated_sensors.items():
+			influx.set_sensor_limit(sensor, limit)
 		# Signal main loop to refresh sensor limits
 		if limits_changed_event:
 			limits_changed_event.set()
-	else:
-		logger.info("No sensor limits to update")
-
-	# persist updated limits via the influx client's set_sensor_limit (v1) or write
-	for sensor, limit in updated.items():
-		influx.set_sensor_limit(sensor, int(limit))
-
-	# window_seconds handling
-	ws = form.get('window_seconds')
-	if isinstance(ws, str) and ws != "":
-		ws_val = int(ws)
-		logger.info(f"Updating window_seconds to {ws_val}")
-		influx.set_window_seconds(ws_val)
-		# Signal main loop to refresh window_seconds
-		if window_seconds_changed_event:
-			window_seconds_changed_event.set()
-
-	return RedirectResponse(url='/', status_code=303)
+	
+	# Update window_seconds if provided
+	if window_seconds is not None:
+		try:
+			ws_val = int(float(window_seconds))
+			logger.info(f"Updating window_seconds to {ws_val}")
+			influx.set_window_seconds(ws_val)
+			# Signal main loop to refresh window_seconds
+			if window_seconds_changed_event:
+				window_seconds_changed_event.set()
+		except (ValueError, TypeError):
+			logger.warning(f"Invalid window_seconds value: {window_seconds}")
+	
+	return {"status": "ok"}
 
 def run(host='0.0.0.0', port=8000):
 	uvicorn.run(app, host=host, port=port)

@@ -4,14 +4,14 @@ Handles menu item storage and pre-rendering for optimal performance.
 """
 import time
 import logging
-from typing import List, Dict, Tuple, Optional, Callable, Union
+from typing import List, Dict, Tuple, Optional, Callable, Union, Any
 from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
 
-# Type alias for menu items: can be a string or a dict with 'text' and 'action'
-MenuItem = Union[str, Dict[str, Union[str, Callable]]]
+# Type alias for menu items: can be a string or a dict
+MenuItem = Union[str, Dict[str, Any]]
 
 # Cache the font so it's only loaded once
 _cached_font = None
@@ -30,10 +30,11 @@ def _load_font():
         return _cached_font
     
     # Try fonts in order of preference for clarity at small sizes
-    # Point sizes are larger than pixel heights - 10pt renders to ~8px on OLED
+    # Point sizes are larger than pixel heights - 12pt renders to ~10px on OLED
     font_options = [
         # TrueType fonts - try common proportional (non-monospace) fonts first
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+        ("fonts/PixelOperator8.ttf", 8),
+        #("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
     ]
     
     for font_path in font_options:
@@ -72,10 +73,12 @@ class Menu:
             display_width: Width of the display in pixels (default 128)
             display_height: Height of the display in pixels (default 32)
         """
-        # Add a blank item at the end to allow scrolling last item to top
-        self.raw_items = items + [""]
+        # Add blank items at both start and end to allow scrolling
+        # This lets the first item be centered when selected, and last item too
+        self.raw_items = [""] + items + [""]
         self.items = [self._get_text(item) for item in self.raw_items]
         self.actions = [self._get_action(item) for item in self.raw_items]
+        self.submenus = [self._is_submenu(item) for item in self.raw_items]
         self.display_width = display_width
         self.display_height = display_height
         
@@ -122,32 +125,52 @@ class Menu:
                 return action
         return None
     
+    def _is_submenu(self, item: MenuItem) -> bool:
+        """Check if a menu item is a submenu."""
+        return isinstance(item, dict) and item.get('submenu', False)
+    
     def _prerender_frames(self) -> None:
         """Pre-render all possible frame buffers for the menu."""
         logger.debug(f"Pre-rendering {len(self.items)} menu items...")
         start_time = time.perf_counter()
         
-        # Pre-render all possible two-line combinations with all cursor positions
-        for scroll_index in range(len(self.items)):
+        # Pre-render all possible three-line combinations with all cursor positions
+        # Stop when the last real item is centered (scroll_index + 1 = len - 2)
+        for scroll_index in range(len(self.items) - 2):
             line1 = self.items[scroll_index] if scroll_index < len(self.items) else ""
             line2 = self.items[scroll_index + 1] if scroll_index + 1 < len(self.items) else ""
+            line3 = self.items[scroll_index + 2] if scroll_index + 2 < len(self.items) else ""
             
-            # Pre-render with cursor on line 1, line 2, and no cursor
-            for cursor_line in [0, 1]:
-                frame_key = (scroll_index, cursor_line)
-                if frame_key in self._frame_cache:
-                    continue
-                
-                # Create a full frame with these two lines
+            # Pre-render with cursor on line 2 (middle line)
+            # Note: cursor_line 0 means active/selected
+            frame_key = (scroll_index, 0)
+            if frame_key not in self._frame_cache:
                 frame = Image.new('1', (self.display_width, self.display_height), 0)
                 draw = ImageDraw.Draw(frame)
                 
+                # Line 1 (inactive): normal text at y=3
                 if line1:
-                    prefix1 = "> " if cursor_line == 0 else "  "
-                    draw.text((4, 4), prefix1 + line1, fill=1, font=self.font)
+                    draw.text((1, 3), line1, fill=1, font=self.font)
+                    # Overlay >> for submenu items
+                    if self.submenus[scroll_index]:
+                        draw.text((self.display_width - 11, 3), ">>", fill=1, font=self.font)
+                
+                # Line 2 (active): inverted background with text at y=13
                 if line2:
-                    prefix2 = "> " if cursor_line == 1 else "  "
-                    draw.text((4, 16), prefix2 + line2, fill=1, font=self.font)
+                    # Draw inverted background for active line (trimmed 1px top and bottom)
+                    draw.rectangle([(0, 11), (self.display_width, 21)], fill=1)
+                    # Draw text in black (inverted)
+                    draw.text((1, 13), line2, fill=0, font=self.font)
+                    # Overlay >> for submenu items
+                    if self.submenus[scroll_index + 1]:
+                        draw.text((self.display_width - 11, 13), ">>", fill=0, font=self.font)
+                
+                # Line 3 (inactive): normal text at y=23
+                if line3:
+                    draw.text((1, 23), line3, fill=1, font=self.font)
+                    # Overlay >> for submenu items
+                    if self.submenus[scroll_index + 2]:
+                        draw.text((self.display_width - 11, 23), ">>", fill=1, font=self.font)
                 
                 # Cache the complete frame
                 self._frame_cache[frame_key] = frame
@@ -166,7 +189,12 @@ class Menu:
         Returns:
             Pre-rendered PIL Image, or None if not cached
         """
-        return self._frame_cache.get((scroll_index, 0))
+        # Clamp scroll_index to valid range (0 to len - 3)
+        max_index = len(self.items) - 3
+        if max_index < 0:
+            max_index = 0
+        clamped_index = max(0, min(scroll_index, max_index))
+        return self._frame_cache.get((clamped_index, 0))
     
     def has_frame(self, scroll_index: int, cursor_line: Optional[int] = 0) -> bool:
         """
@@ -179,7 +207,12 @@ class Menu:
         Returns:
             True if frame is cached
         """
-        return (scroll_index, 0) in self._frame_cache
+        # Clamp scroll_index to valid range (0 to len - 3)
+        max_index = len(self.items) - 3
+        if max_index < 0:
+            max_index = 0
+        clamped_index = max(0, min(scroll_index, max_index))
+        return (clamped_index, 0) in self._frame_cache
     
     def get_item(self, index: int) -> str:
         """

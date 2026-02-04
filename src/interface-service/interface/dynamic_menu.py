@@ -28,6 +28,7 @@ from utils.system_info import (
 )
 from utils.user_settings import user_settings
 from utils.color_utils import hsv_to_rgb
+from utils.limit_service_api import LimitServiceAPI
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,13 @@ class DynamicMenu:
         # Dynamic content cache
         self.dynamic_values: Dict[str, str] = {}
         self.refresh_timers: Dict[str, float] = {}  # Last refresh time per function
+        
+        # Limit service API client
+        self.limit_api = LimitServiceAPI()
+        self.sensor_limits: Dict[str, float] = {}  # Cache of sensor limits
+        
+        # Current sensor being edited (for threshold_bar)
+        self.editing_sensor: Optional[str] = None
         
         # Function registry for dynamic content
         self.function_registry: Dict[str, Callable] = {
@@ -188,14 +196,14 @@ class DynamicMenu:
                     self.dynamic_values[func_name] = self._get_dynamic_value(func_name)
                     self.refresh_timers[func_name] = time.time()
     
-    def _format_menu_text(self, item: Dict) -> str:
+    def _format_menu_text(self, item: Dict) -> MenuItem:
         """Format menu item text with dynamic values.
         
         Args:
             item: Menu item configuration
             
         Returns:
-            Formatted text string
+            Formatted text string or dict with text and submenu flag
         """
         text = item.get("text", "")
         item_type = item.get("type", "static")
@@ -205,8 +213,8 @@ class DynamicMenu:
             if func_name:
                 value = self.dynamic_values.get(func_name, self._get_dynamic_value(func_name))
                 # Replace placeholder in text
-                for key in ["{wifi_ssid}", "{ip_address}", "{uptime}", "{service_status}", "{load_average}"]:
-                    text = text.replace(key, value)
+                for key in ["wifi_ssid}", "ip_address}", "uptime}", "service_status}", "load_average}"]:
+                    text = text.replace("{" + key, value)
         
         elif item_type == "checkbox":
             # Add checkbox indicator
@@ -243,7 +251,37 @@ class DynamicMenu:
             sensor_count = self._get_sensor_count()
             text = text.replace("{sensor_count}", str(sensor_count))
         
+        # Return dict with submenu flag for items that lead to special screens
+        if item_type in ("submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable"):
+            return {"text": text, "submenu": True}
+        
         return text
+    
+    def _create_sensor_menu_config(self, sensor_name: str) -> Dict:
+        """Create a dynamic menu configuration for a sensor.
+        
+        Args:
+            sensor_name: Name of the sensor
+            
+        Returns:
+            Menu configuration dictionary
+        """
+        # Get MPS from IPC server
+        mps = 0.0
+        if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
+            mps = self.led_ipc_server.sensor_data.get(sensor_name, 0.0)
+        
+        # Get current limit from cache
+        limit = self.sensor_limits.get(sensor_name, 0.0)
+        
+        return {
+            "items": [
+                {"text": f"{sensor_name}", "type": "static"},
+                {"text": f"Rate: {mps:.1f} mps", "type": "static"},
+                {"text": f"Threshold", "type": "threshold_bar", "sensor": sensor_name, "min": 0, "max": 150},
+                {"text": "Back", "type": "back"}
+            ]
+        }
     
     def _get_current_menu_config(self) -> Dict:
         """Get configuration for current menu.
@@ -251,6 +289,11 @@ class DynamicMenu:
         Returns:
             Menu configuration dictionary
         """
+        # Check if this is a dynamic sensor submenu
+        if self.current_menu_name.startswith("sensor_"):
+            sensor_name = self.current_menu_name.removeprefix("sensor_")
+            return self._create_sensor_menu_config(sensor_name)
+        
         return self.config["menus"].get(self.current_menu_name, {})
     
     def _refresh_current_menu(self, preserve_position: bool = False):
@@ -273,18 +316,19 @@ class DynamicMenu:
             expanded_items = []
             for item in items:
                 if item.get("type") == "sensor_summary":
+                    # Fetch current sensor limits from API
+                    self.sensor_limits = self.limit_api.get_limits()
+                    
                     # Add the summary line
                     expanded_items.append(item)
-                    # Add individual sensor lines
-                    if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
-                        for sensor_name, mps in sorted(self.led_ipc_server.sensor_data.items()):
-                            # Strip 'sensor-' prefix if present
-                            display_name = sensor_name.removeprefix('sensor-')
-                            sensor_item = {
-                                "text": f"  {display_name}: {mps:.1f} mps",
-                                "type": "display_only"
-                            }
-                            expanded_items.append(sensor_item)
+                    # Add individual sensor lines as clickable submenus
+                    for sensor_name in sorted(self.sensor_limits.keys()):
+                        sensor_item = {
+                            "text": sensor_name,
+                            "type": "submenu",
+                            "submenu": f"sensor_{sensor_name}"  # Dynamic submenu name
+                        }
+                        expanded_items.append(sensor_item)
                 else:
                     expanded_items.append(item)
             
@@ -431,6 +475,24 @@ class DynamicMenu:
                 
                 # Refresh display
                 self._render_hue_bar()
+            
+            elif self.edit_config.get("type") == "threshold_bar":
+                # Threshold bar mode - adjust threshold value (0-150)
+                bar_width = 110  # Must match _render_threshold_bar
+                min_val = self.edit_config.get("min", 0)
+                max_val = self.edit_config.get("max", 150)
+                step = (max_val - min_val) / bar_width  # Each step = 1 pixel
+                
+                self.edit_value += (step if delta < 0 else -step)
+                
+                # Clamp to min/max
+                self.edit_value = max(min_val, min(max_val, self.edit_value))
+                # Round to nearest integer
+                self.edit_value = int(round(self.edit_value))
+                
+                # Refresh display
+                self._render_threshold_bar()
+            
             else:
                 # Standard edit mode uses smaller steps
                 step = 1 if abs(delta) == 1 else 5
@@ -477,18 +539,19 @@ class DynamicMenu:
         expanded_items = []
         for item in items:
             if item.get("type") == "sensor_summary":
+                # Fetch current sensor limits from API
+                self.sensor_limits = self.limit_api.get_limits()
+                
                 # Add the summary line
                 expanded_items.append(item)
-                # Add individual sensor lines
-                if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
-                    for sensor_name, mps in sorted(self.led_ipc_server.sensor_data.items()):
-                        # Strip 'sensor-' prefix if present
-                        display_name = sensor_name.removeprefix('sensor-')
-                        sensor_item = {
-                            "text": f"  {display_name}: {mps:.1f} mps",
-                            "type": "display_only"
-                        }
-                        expanded_items.append(sensor_item)
+                # Add individual sensor lines as clickable submenus
+                for sensor_name in sorted(self.sensor_limits.keys()):
+                    sensor_item = {
+                        "text": sensor_name,
+                        "type": "submenu",
+                        "submenu": f"sensor_{sensor_name}"  # Dynamic submenu name
+                    }
+                    expanded_items.append(sensor_item)
             else:
                 expanded_items.append(item)
         
@@ -514,6 +577,8 @@ class DynamicMenu:
             self._enter_brightness_bar_mode(item)
         elif item_type == "hue_bar":
             self._enter_hue_bar_mode(item)
+        elif item_type == "threshold_bar":
+            self._enter_threshold_bar_mode(item)
         elif item_type == "action":
             self._handle_action(item)
     
@@ -700,6 +765,42 @@ class DynamicMenu:
         # Display the image
         self.display.device.display(image)
     
+    def _render_threshold_bar(self):
+        """Render the threshold bar interface for sensor limit adjustment."""
+        # Create image
+        image = Image.new('1', (self.display.device.width, self.display.device.height), 0)
+        draw = ImageDraw.Draw(image)
+        
+        # Line 1: Threshold bar with cursor
+        bar_x = 4
+        bar_y = 4
+        bar_width = 110
+        bar_height = 8
+        
+        min_val = self.edit_config.get("min", 0)
+        max_val = self.edit_config.get("max", 150)
+        
+        # Calculate cursor position based on threshold value
+        value_range = max_val - min_val
+        cursor_pos = int(bar_x + bar_width * ((self.edit_value - min_val) / value_range))
+        
+        # Draw bar outline
+        draw.rectangle([(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)], outline=1, fill=0)
+        
+        # Draw cursor (a small vertical line)
+        draw.rectangle([(cursor_pos - 1, bar_y - 1), (cursor_pos + 1, bar_y + bar_height + 1)], outline=1, fill=0)
+        
+        # Line 2: Current value centered
+        value_str = f"{self.edit_value}"
+        # Calculate text width to center it
+        bbox = draw.textbbox((0, 0), value_str)
+        text_width = bbox[2] - bbox[0]
+        text_x = (self.display.device.width - text_width) // 2
+        draw.text((text_x, 20), value_str, fill=1)
+        
+        # Display the image
+        self.display.device.display(image)
+    
     def _enter_hue_bar_mode(self, item: Dict):
         """Enter hue bar mode for alert color selection.
         
@@ -725,6 +826,27 @@ class DynamicMenu:
         # Render the hue bar interface
         self._render_hue_bar()
     
+    def _enter_threshold_bar_mode(self, item: Dict):
+        """Enter threshold bar mode for sensor limit adjustment.
+        
+        Args:
+            item: Threshold bar item configuration
+        """
+        self.edit_mode = True
+        self.edit_config = item
+        
+        # Store which sensor we're editing
+        self.editing_sensor = item.get("sensor")
+        
+        # Get current threshold value
+        if self.editing_sensor:
+            self.edit_value = int(self.sensor_limits.get(self.editing_sensor, 0))
+        else:
+            self.edit_value = 0
+        
+        # Render the threshold bar interface
+        self._render_threshold_bar()
+    
     def _save_edit_value(self):
         """Save the edited value."""
         if self.edit_config.get("type") == "hue_bar":
@@ -741,6 +863,19 @@ class DynamicMenu:
                 self.led_ipc_server.pause_updates = False
                 # Render status history once to restore display
                 self.led_ipc_server._render_status_history()
+        
+        elif self.edit_config.get("type") == "threshold_bar":
+            # Threshold bar mode - update sensor limit via API
+            if self.editing_sensor:
+                success = self.limit_api.update_limit(self.editing_sensor, float(self.edit_value))
+                if success:
+                    # Update local cache
+                    self.sensor_limits[self.editing_sensor] = float(self.edit_value)
+                    logger.info(f"Updated {self.editing_sensor} limit to {self.edit_value}")
+                else:
+                    logger.error(f"Failed to update {self.editing_sensor} limit")
+            self.editing_sensor = None
+        
         else:
             # Regular edit mode or brightness bar - save integer value
             func_name = self.edit_config.get("function")
@@ -820,6 +955,4 @@ class DynamicMenu:
         Returns:
             Number of active sensors
         """
-        if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
-            return len(self.led_ipc_server.sensor_data)
-        return 0
+        return len(self.sensor_limits)
