@@ -7,7 +7,7 @@ import uvicorn
 import threading
 import logging
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger('limit-service.webserver')
 
@@ -17,6 +17,7 @@ influx = create_influx_client()
 # Signals to main loop that configuration has changed
 limits_changed_event: Optional[threading.Event] = None
 window_seconds_changed_event: Optional[threading.Event] = None
+monitor_ref: Optional[Any] = None  # Reference to Monitor object from main.py
 
 def set_limits_changed_event(event: threading.Event):
 	"""Called by main.py to register the event for signaling limit changes."""
@@ -27,6 +28,11 @@ def set_window_seconds_changed_event(event: threading.Event):
 	"""Called by main.py to register the event for signaling window_seconds changes."""
 	global window_seconds_changed_event
 	window_seconds_changed_event = event
+
+def set_monitor(monitor: Any):
+	"""Called by main.py to register the monitor object for sensor queries."""
+	global monitor_ref
+	monitor_ref = monitor
 
 INDEX_HTML = """
 <!doctype html>
@@ -147,6 +153,74 @@ async def get_window_seconds():
 		window_seconds = 30
 	
 	return {"window_seconds": window_seconds}
+
+@app.get("/api/sensor")
+async def get_sensors():
+	"""Get a list of all currently active sensor names.
+	
+	Returns:
+		JSON array of sensor names that have recent data in the monitor
+	"""
+	if monitor_ref is None:
+		return {"error": "Monitor not available"}, 503
+	
+	# Get all sensors from the monitor's sensor_averages (filters out stale sensors)
+	sensors = list(monitor_ref.sensor_averages().keys())
+	
+	return {"sensors": sensors}
+
+@app.get("/api/sensor/{sensor_name}")
+async def get_sensor_current_reading(sensor_name: str):
+	"""Get the most recent dBA reading for a specific sensor.
+	
+	Args:
+		sensor_name: Name of the sensor to query
+		
+	Returns:
+		JSON with sensor name, current reading (max across bands), average, timestamp,
+		and measurements per second
+		Returns 404 if sensor not found or has no recent data
+	"""
+	if monitor_ref is None:
+		return {"error": "Monitor not available"}, 503
+	
+	# Check if sensor exists and has data
+	if sensor_name not in monitor_ref.sensors:
+		return {"error": f"Sensor '{sensor_name}' not found"}, 404
+	
+	bands = monitor_ref.sensors[sensor_name]
+	
+	# Get the most recent reading across all bands
+	most_recent_time = 0
+	most_recent_value = None
+	
+	for band, window in bands.items():
+		if len(window.dq) > 0:
+			timestamp, value = window.dq[-1]  # Last item is most recent
+			if timestamp > most_recent_time:
+				most_recent_time = timestamp
+				most_recent_value = value
+	
+	if most_recent_value is None:
+		return {"error": f"Sensor '{sensor_name}' has no recent data"}, 404
+	
+	# Also get the max average across bands (similar to check_alerts logic)
+	max_avg = max(band.average() for band in bands.values())
+	
+	# Calculate measurements per second
+	total_readings = 0
+	for window in bands.values():
+		total_readings += len(window.dq)
+	
+	measurements_per_second = total_readings / monitor_ref.window_seconds if monitor_ref.window_seconds > 0 else 0
+	
+	return {
+		"sensor": sensor_name,
+		"current_reading": most_recent_value,
+		"average": max_avg,
+		"timestamp": most_recent_time,
+		"measurements_per_second": measurements_per_second
+	}
 
 @app.post("/limits")
 async def update_limits(request: Request):

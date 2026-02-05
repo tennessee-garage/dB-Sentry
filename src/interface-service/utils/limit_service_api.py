@@ -7,7 +7,7 @@ import logging
 import urllib.request
 import urllib.parse
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,45 @@ class LimitServiceAPI:
                 return data.get('window_seconds')
         except Exception as e:
             logger.error(f"Failed to fetch window_seconds: {e}")
+            return None
+
+    def get_sensors(self) -> List[str]:
+        """Fetch active sensors from the API.
+        
+        Returns:
+            List of active sensor names. Returns empty list on error.
+        """
+        try:
+            url = f"{self.base_url}/api/sensor"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                sensors = data.get("sensors", [])
+                if not isinstance(sensors, list):
+                    return []
+                logger.info(f"Fetched sensors from API: {sensors}")
+                return [str(sensor) for sensor in sensors]
+        except Exception as e:
+            logger.error(f"Failed to fetch sensors: {e}")
+            return []
+    
+    def get_sensor_details(self, sensor_name: str) -> Optional[Dict]:
+        """Fetch detailed sensor information from the API.
+        
+        Args:
+            sensor_name: Name of the sensor
+            
+        Returns:
+            Dictionary with sensor details (sensor, current_reading, average, timestamp, measurements_per_second)
+            Returns None on error.
+        """
+        try:
+            url = f"{self.base_url}/api/sensor/{sensor_name}"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                logger.info(f"Fetched details for {sensor_name}: {data}")
+                return data
+        except Exception as e:
+            logger.error(f"Failed to fetch sensor details for {sensor_name}: {e}")
             return None
     
     def update_limit(self, sensor_name: str, limit: float) -> bool:

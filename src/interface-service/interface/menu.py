@@ -79,6 +79,7 @@ class Menu:
         self.items = [self._get_text(item) for item in self.raw_items]
         self.actions = [self._get_action(item) for item in self.raw_items]
         self.submenus = [self._is_submenu(item) for item in self.raw_items]
+        self.right_texts = [self._get_right_text(item) for item in self.raw_items]
         self.display_width = display_width
         self.display_height = display_height
         
@@ -128,6 +129,13 @@ class Menu:
     def _is_submenu(self, item: MenuItem) -> bool:
         """Check if a menu item is a submenu."""
         return isinstance(item, dict) and item.get('submenu', False)
+
+    def _get_right_text(self, item: MenuItem) -> str:
+        """Extract right-aligned text from a menu item."""
+        if isinstance(item, dict):
+            right_text = item.get('right_text', '')
+            return str(right_text) if right_text else ''
+        return ''
     
     def _prerender_frames(self) -> None:
         """Pre-render all possible frame buffers for the menu."""
@@ -140,6 +148,9 @@ class Menu:
             line1 = self.items[scroll_index] if scroll_index < len(self.items) else ""
             line2 = self.items[scroll_index + 1] if scroll_index + 1 < len(self.items) else ""
             line3 = self.items[scroll_index + 2] if scroll_index + 2 < len(self.items) else ""
+            right1 = self.right_texts[scroll_index] if scroll_index < len(self.right_texts) else ""
+            right2 = self.right_texts[scroll_index + 1] if scroll_index + 1 < len(self.right_texts) else ""
+            right3 = self.right_texts[scroll_index + 2] if scroll_index + 2 < len(self.right_texts) else ""
             
             # Pre-render with cursor on line 2 (middle line)
             # Note: cursor_line 0 means active/selected
@@ -151,6 +162,12 @@ class Menu:
                 # Line 1 (inactive): normal text at y=3
                 if line1:
                     draw.text((1, 3), line1, fill=1, font=self.font)
+                    if right1:
+                        bbox = draw.textbbox((0, 0), right1, font=self.font)
+                        text_width = bbox[2] - bbox[0]
+                        submenu_pad = 12 if self.submenus[scroll_index] else 0
+                        text_x = max(1, self.display_width - text_width - 1 - submenu_pad)
+                        draw.text((text_x, 3), right1, fill=1, font=self.font)
                     # Overlay >> for submenu items
                     if self.submenus[scroll_index]:
                         draw.text((self.display_width - 11, 3), ">>", fill=1, font=self.font)
@@ -161,6 +178,12 @@ class Menu:
                     draw.rectangle([(0, 11), (self.display_width, 21)], fill=1)
                     # Draw text in black (inverted)
                     draw.text((1, 13), line2, fill=0, font=self.font)
+                    if right2:
+                        bbox = draw.textbbox((0, 0), right2, font=self.font)
+                        text_width = bbox[2] - bbox[0]
+                        submenu_pad = 12 if self.submenus[scroll_index + 1] else 0
+                        text_x = max(1, self.display_width - text_width - 1 - submenu_pad)
+                        draw.text((text_x, 13), right2, fill=0, font=self.font)
                     # Overlay >> for submenu items
                     if self.submenus[scroll_index + 1]:
                         draw.text((self.display_width - 11, 13), ">>", fill=0, font=self.font)
@@ -168,6 +191,12 @@ class Menu:
                 # Line 3 (inactive): normal text at y=23
                 if line3:
                     draw.text((1, 23), line3, fill=1, font=self.font)
+                    if right3:
+                        bbox = draw.textbbox((0, 0), right3, font=self.font)
+                        text_width = bbox[2] - bbox[0]
+                        submenu_pad = 12 if self.submenus[scroll_index + 2] else 0
+                        text_x = max(1, self.display_width - text_width - 1 - submenu_pad)
+                        draw.text((text_x, 23), right3, fill=1, font=self.font)
                     # Overlay >> for submenu items
                     if self.submenus[scroll_index + 2]:
                         draw.text((self.display_width - 11, 23), ">>", fill=1, font=self.font)

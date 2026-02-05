@@ -141,22 +141,3 @@ class RemoteLEDClient:
             logger.error(f"LED push_alert_status failed: {e}")
             return False
     
-    def update_sensors(self, sensors: dict) -> bool:
-        """Update the active sensor list with measurements per second.
-        
-        Args:
-            sensors: Dictionary mapping sensor_name (str) to measurements_per_second (float)
-                    Example: {'temperature': 10.5, 'pressure': 5.2}
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            response = self._send_command({
-                'command': 'update_sensors',
-                'sensors': sensors
-            })
-            return response.get('status') == 'ok'
-        except ConnectionError as e:
-            logger.error(f"LED update_sensors failed: {e}")
-            return False

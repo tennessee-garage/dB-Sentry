@@ -13,8 +13,9 @@ import yaml
 import time
 import logging
 import threading
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Callable, Any, Union, cast
+from typing import Dict, List, Optional, Callable, Any, Union, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from .menu import Menu, MenuItem
@@ -92,6 +93,8 @@ class DynamicMenu:
         
         # Current sensor being edited (for threshold_bar)
         self.editing_sensor: Optional[str] = None
+        self.editing_sensor_live_value: float = 0.0  # Live current_reading from API
+        self.editing_sensor_last_update: float = 0.0  # Last time live value was fetched
         
         # Function registry for dynamic content
         self.function_registry: Dict[str, Callable] = {
@@ -251,9 +254,18 @@ class DynamicMenu:
             sensor_count = self._get_sensor_count()
             text = text.replace("{sensor_count}", str(sensor_count))
         
+        # Preserve right-aligned text if present
+        right_text = item.get("right_text")
+
         # Return dict with submenu flag for items that lead to special screens
         if item_type in ("submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable"):
-            return {"text": text, "submenu": True}
+            payload = {"text": text, "submenu": True}
+            if right_text:
+                payload["right_text"] = right_text
+            return payload
+
+        if right_text:
+            return {"text": text, "right_text": right_text}
         
         return text
     
@@ -266,10 +278,11 @@ class DynamicMenu:
         Returns:
             Menu configuration dictionary
         """
-        # Get MPS from IPC server
+        # Get sensor details from API
         mps = 0.0
-        if self.led_ipc_server and hasattr(self.led_ipc_server, 'sensor_data'):
-            mps = self.led_ipc_server.sensor_data.get(sensor_name, 0.0)
+        sensor_details = self.limit_api.get_sensor_details(sensor_name)
+        if sensor_details:
+            mps = sensor_details.get('measurements_per_second', 0.0)
         
         # Get current limit from cache
         limit = self.sensor_limits.get(sensor_name, 0.0)
@@ -282,6 +295,64 @@ class DynamicMenu:
                 {"text": "Back", "type": "back"}
             ]
         }
+
+    def _scan_aps(self) -> List[Tuple[str, int]]:
+        """Scan for visible WiFi access points.
+        
+        Returns:
+            List of (SSID, signal) tuples sorted by signal desc.
+        """
+        try:
+            result = subprocess.run(
+                ["nmcli", "-t", "-f", "SSID,SIGNAL", "dev", "wifi"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return []
+            entries = []
+            for line in result.stdout.splitlines():
+                if not line:
+                    continue
+                parts = line.split(":", 1)
+                if len(parts) != 2:
+                    continue
+                ssid, signal = parts[0].strip(), parts[1].strip()
+                if not ssid:
+                    ssid = "<hidden>"
+                try:
+                    signal_val = int(signal)
+                except ValueError:
+                    signal_val = 0
+                entries.append((ssid, signal_val))
+            entries.sort(key=lambda item: item[1], reverse=True)
+            return entries[:10]
+        except Exception as e:
+            logger.error(f"Failed to scan APs: {e}")
+            return []
+
+    def _create_scan_aps_menu_config(self) -> Dict:
+        """Create a dynamic menu configuration for WiFi AP scan."""
+        ap_list = self._scan_aps()
+
+        def _signal_bars(signal: int) -> str:
+            if signal >= 75:
+                return "||||"
+            if signal >= 50:
+                return "|||"
+            if signal >= 25:
+                return "||"
+            if signal > 0:
+                return "|"
+            return ""
+
+        items = [
+            {"text": ssid, "type": "static", "right_text": _signal_bars(signal)}
+            for ssid, signal in ap_list
+        ]
+        items.append({"text": "Back", "type": "back"})
+        return {"items": items}
     
     def _get_current_menu_config(self) -> Dict:
         """Get configuration for current menu.
@@ -293,6 +364,10 @@ class DynamicMenu:
         if self.current_menu_name.startswith("sensor_"):
             sensor_name = self.current_menu_name.removeprefix("sensor_")
             return self._create_sensor_menu_config(sensor_name)
+
+        # Check if this is the AP scan submenu
+        if self.current_menu_name == "scan_aps":
+            return self._create_scan_aps_menu_config()
         
         return self.config["menus"].get(self.current_menu_name, {})
     
@@ -316,13 +391,15 @@ class DynamicMenu:
             expanded_items = []
             for item in items:
                 if item.get("type") == "sensor_summary":
-                    # Fetch current sensor limits from API
+                    # Fetch active sensors and current limits from API
+                    sensors = self.limit_api.get_sensors()
                     self.sensor_limits = self.limit_api.get_limits()
+                    sensor_names = sensors
                     
                     # Add the summary line
                     expanded_items.append(item)
                     # Add individual sensor lines as clickable submenus
-                    for sensor_name in sorted(self.sensor_limits.keys()):
+                    for sensor_name in sorted(sensor_names):
                         sensor_item = {
                             "text": sensor_name,
                             "type": "submenu",
@@ -767,6 +844,15 @@ class DynamicMenu:
     
     def _render_threshold_bar(self):
         """Render the threshold bar interface for sensor limit adjustment."""
+        # Update live sensor reading every second
+        current_time = time.time()
+        if current_time - self.editing_sensor_last_update >= 1.0:
+            if self.editing_sensor:
+                sensor_details = self.limit_api.get_sensor_details(self.editing_sensor)
+                if sensor_details:
+                    self.editing_sensor_live_value = sensor_details.get('current_reading', 0.0)
+                self.editing_sensor_last_update = current_time
+        
         # Create image
         image = Image.new('1', (self.display.device.width, self.display.device.height), 0)
         draw = ImageDraw.Draw(image)
@@ -790,13 +876,10 @@ class DynamicMenu:
         # Draw cursor (a small vertical line)
         draw.rectangle([(cursor_pos - 1, bar_y - 1), (cursor_pos + 1, bar_y + bar_height + 1)], outline=1, fill=0)
         
-        # Line 2: Current value centered
-        value_str = f"{self.edit_value}"
-        # Calculate text width to center it
-        bbox = draw.textbbox((0, 0), value_str)
-        text_width = bbox[2] - bbox[0]
-        text_x = (self.display.device.width - text_width) // 2
-        draw.text((text_x, 20), value_str, fill=1)
+        # Line 2: Limit and Live values
+        live_rounded = int(round(self.editing_sensor_live_value))
+        value_str = f"Limit: {self.edit_value}  |  Live: {live_rounded}"
+        draw.text((4, 20), value_str, fill=1)
         
         # Display the image
         self.display.device.display(image)
@@ -841,8 +924,17 @@ class DynamicMenu:
         # Get current threshold value
         if self.editing_sensor:
             self.edit_value = int(self.sensor_limits.get(self.editing_sensor, 0))
+            # Initialize live value
+            sensor_details = self.limit_api.get_sensor_details(self.editing_sensor)
+            if sensor_details:
+                self.editing_sensor_live_value = sensor_details.get('current_reading', 0.0)
+            else:
+                self.editing_sensor_live_value = 0.0
+            self.editing_sensor_last_update = time.time()
         else:
             self.edit_value = 0
+            self.editing_sensor_live_value = 0.0
+            self.editing_sensor_last_update = 0.0
         
         # Render the threshold bar interface
         self._render_threshold_bar()
@@ -955,4 +1047,5 @@ class DynamicMenu:
         Returns:
             Number of active sensors
         """
-        return len(self.sensor_limits)
+        sensors = self.limit_api.get_sensors()
+        return len(sensors)

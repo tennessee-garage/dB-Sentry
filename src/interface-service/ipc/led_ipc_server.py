@@ -43,8 +43,6 @@ class LEDIPCServer:
         # Pause updates flag (for when user is adjusting LED colors)
         self.pause_updates = False
         
-        # Sensor data: dict of sensor_name -> measurements_per_second
-        self.sensor_data = {}
     
     def start(self):
         """Start the IPC server in a background thread."""
@@ -161,11 +159,6 @@ class LEDIPCServer:
                     response = {'status': 'ok', 'command': command, 'alert_status': alert_status}
                 else:
                     response = {'status': 'error', 'message': f'Invalid status: {alert_status}'}
-            
-            elif command == 'update_sensors':
-                sensors = request.get('sensors', {})  # dict of sensor_name -> mps
-                self.sensor_data = sensors
-                response = {'status': 'ok', 'command': command, 'sensor_count': len(sensors)}
             
             else:
                 response = {'status': 'error', 'message': f'Unknown command: {command}'}

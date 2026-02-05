@@ -1,7 +1,7 @@
 import logging
 from typing import Dict
 from mqtt.client import start_mqtt_service
-from webserver import run_in_thread, set_limits_changed_event, set_window_seconds_changed_event
+from webserver import run_in_thread, set_limits_changed_event, set_window_seconds_changed_event, set_monitor
 from influx_client import create_influx_client
 from config import cfg
 import time
@@ -33,31 +33,6 @@ sensor_lock = threading.Lock()
 
 interface = RemoteInterfaceClient()
 
-# Track time for periodic sensor updates (every 5 minutes)
-SENSOR_UPDATE_INTERVAL = 300  # seconds
-last_sensor_update = time.time()
-
-def get_sensor_measurements_per_second() -> Dict[str, float]:
-	"""Calculate measurements per second for each sensor in the last 5 minutes.
-	
-	Returns:
-		Dictionary mapping sensor name to measurements per second
-	"""
-	measurements = {}
-	now = time.time()
-	
-	with sensor_lock:
-		for sensor, bands in monitor.sensors.items():
-			total_readings = 0
-			for window in bands.values():
-				# Count readings in the window
-				total_readings += len(window.dq)
-			
-			if total_readings > 0:
-				# Calculate rate: total readings / window size in seconds
-				measurements[sensor] = total_readings / window_seconds
-	
-	return measurements
 
 def on_message(topic, value):
 	"""Handle incoming MQTT messages. Topic format: db_sentry/$sensor/$band
@@ -133,6 +108,7 @@ if __name__ == '__main__':
 	# Register change events with the webserver
 	set_limits_changed_event(limits_changed_event)
 	set_window_seconds_changed_event(window_seconds_changed_event)
+	set_monitor(monitor)
 	
 	# start webserver
 	run_in_thread(port=8000)
@@ -156,17 +132,6 @@ if __name__ == '__main__':
 				logger.info(f"Updating monitor window to {window_seconds} seconds")
 				monitor.update_window_seconds(window_seconds)
 				window_seconds_changed_event.clear()
-			
-			# Update sensor measurements to LED every 5 minutes
-			if time.time() - last_sensor_update >= SENSOR_UPDATE_INTERVAL:
-				measurements = get_sensor_measurements_per_second()
-				if measurements:
-					try:
-						interface.update_sensors(measurements)
-						logger.info(f"Updated interface with {len(measurements)} active sensors")
-					except Exception as e:
-						logger.error(f"Failed to update interface sensors: {e}")
-				last_sensor_update = time.time()
 			
 			check_alerts()
 			time.sleep(1)
