@@ -13,13 +13,22 @@ menus:
       - { text: "WiFi: {wifi_ssid}", type: "dynamic", function: "get_wifi_ssid" }
       - { text: "IP: {ip_address}", type: "dynamic", function: "get_ip_address" }
       - { text: "Scan APs", type: "submenu", submenu: "scan_aps" }
-      - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
-      - { text: "Service: {service_status}", type: "dynamic", function: "get_service_status", refresh: 10 }
-      - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
+      - { text: "Services", type: "submenu", submenu: "services" }
+      - { text: "System", type: "submenu", submenu: "system" }
       - { text: "Back", type: "back" }
 
   scan_aps:
     items:
+      - { text: "Back", type: "back" }
+
+  services:
+    items:
+      - { text: "Back", type: "back" }
+
+  system:
+    items:
+      - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
+      - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
       - { text: "Back", type: "back" }
 
   sensors:

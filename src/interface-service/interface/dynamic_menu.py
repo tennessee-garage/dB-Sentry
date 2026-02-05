@@ -96,6 +96,10 @@ class DynamicMenu:
         self.editing_sensor_live_value: float = 0.0  # Live current_reading from API
         self.editing_sensor_last_update: float = 0.0  # Last time live value was fetched
         
+        # AP scan state
+        self.scanning_aps: bool = False
+        self.scanned_aps: List[Tuple[str, int]] = []
+        
         # Function registry for dynamic content
         self.function_registry: Dict[str, Callable] = {
             "get_wifi_ssid": get_wifi_ssid,
@@ -331,11 +335,68 @@ class DynamicMenu:
         except Exception as e:
             logger.error(f"Failed to scan APs: {e}")
             return []
+    
+    def _do_ap_scan(self):
+        """Background thread method to scan APs and update menu."""
+        self.scanned_aps = self._scan_aps()
+        self.scanning_aps = False
+        # Refresh menu if still on scan_aps page
+        if self.current_menu_name == "scan_aps":
+            self._refresh_current_menu(preserve_position=True)
+    
+    def _get_service_status_map(self) -> Dict[str, str]:
+        """Get status of all monitored services.
+        
+        Returns:
+            Dict mapping service display name to status string
+        """
+        services = [
+            ("limit", "db-sentry-limit.service"),
+            ("interface", "db-sentry-interface.service"),
+            ("influxd", "influxd.service"),
+            ("mosquitto", "mosquitto.service"),
+            ("telegraf", "telegraf.service")
+        ]
+        
+        status_map = {}
+        for display_name, service_name in services:
+            try:
+                result = subprocess.run(
+                    ["systemctl", "is-active", service_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                status = result.stdout.strip()
+                # Map to short status
+                if status == "active":
+                    status_str = "[up]"
+                elif status == "inactive":
+                    status_str = "[down]"
+                elif status == "failed":
+                    status_str = "[fail]"
+                else:
+                    status_str = status[:4] if status else "?"
+                status_map[display_name] = status_str
+            except Exception as e:
+                logger.debug(f"Failed to check {service_name}: {e}")
+                status_map[display_name] = "?"
+        
+        return status_map
+    
+    def _create_services_menu_config(self) -> Dict:
+        """Create a dynamic menu configuration for services status."""
+        status_map = self._get_service_status_map()
+        
+        items = [
+            {"text": name, "type": "static", "right_text": status}
+            for name, status in status_map.items()
+        ]
+        items.append({"text": "Back", "type": "back"})
+        return {"items": items}
 
     def _create_scan_aps_menu_config(self) -> Dict:
         """Create a dynamic menu configuration for WiFi AP scan."""
-        ap_list = self._scan_aps()
-
         def _signal_bars(signal: int) -> str:
             if signal >= 75:
                 return "||||"
@@ -347,11 +408,19 @@ class DynamicMenu:
                 return "|"
             return ""
 
-        items = [
-            {"text": ssid, "type": "static", "right_text": _signal_bars(signal)}
-            for ssid, signal in ap_list
-        ]
-        items.append({"text": "Back", "type": "back"})
+        if self.scanning_aps:
+            # Show loading state
+            items = [
+                {"text": "Scanning ...", "type": "static"},
+                {"text": "Back", "type": "back"}
+            ]
+        else:
+            # Show results
+            items = [
+                {"text": ssid, "type": "static", "right_text": _signal_bars(signal)}
+                for ssid, signal in self.scanned_aps
+            ]
+            items.append({"text": "Back", "type": "back"})
         return {"items": items}
     
     def _get_current_menu_config(self) -> Dict:
@@ -368,6 +437,10 @@ class DynamicMenu:
         # Check if this is the AP scan submenu
         if self.current_menu_name == "scan_aps":
             return self._create_scan_aps_menu_config()
+        
+        # Check if this is the services submenu
+        if self.current_menu_name == "services":
+            return self._create_services_menu_config()
         
         return self.config["menus"].get(self.current_menu_name, {})
     
@@ -669,7 +742,16 @@ class DynamicMenu:
         self.current_menu_name = menu_name
         # Reset display position when entering a new menu
         self.display.scroll_index = 0
-        self._refresh_current_menu()
+        
+        # Start async AP scan if navigating to scan_aps
+        if menu_name == "scan_aps":
+            self.scanning_aps = True
+            self.scanned_aps = []
+            self._refresh_current_menu()  # Show loading state
+            # Start scan in background thread
+            threading.Thread(target=self._do_ap_scan, daemon=True).start()
+        else:
+            self._refresh_current_menu()
     
     def _navigate_back(self):
         """Navigate back to previous menu."""
