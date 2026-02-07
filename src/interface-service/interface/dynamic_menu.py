@@ -62,6 +62,10 @@ class DynamicMenu:
         with open(config_file, 'r') as f:
             self.config = yaml.safe_load(f)
         
+        # Boot screen state
+        self.boot_screen_active: bool = True
+        self.boot_check_thread: Optional[threading.Thread] = None
+        
         # Navigation state
         self.menu_stack: List[str] = ["main"]  # Stack of menu names
         self.current_menu_name: str = "main"
@@ -121,9 +125,16 @@ class DynamicMenu:
         # Apply saved user settings on startup
         self._apply_startup_settings()
         
-        # Initialize and display first menu
-        self.display.scroll_index = 0
-        self._refresh_current_menu()
+        # Check if limit-service is available, show boot screen if not
+        if not self.limit_api.is_available():
+            self._show_boot_screen()
+            self._start_boot_check_thread()
+        else:
+            self.boot_screen_active = False
+            # Initialize and display first menu
+            self.display.scroll_index = 0
+            self._refresh_current_menu()
+        
         self._start_refresh_thread()
     
     def _apply_startup_settings(self):
@@ -141,6 +152,43 @@ class DynamicMenu:
         orientation = user_settings.get("orientation", "left")
         rotation = 180 if orientation == "left" else 0
         self.display.set_rotation(rotation)
+    
+    def _show_boot_screen(self):
+        """Display boot screen while waiting for services."""
+        from PIL import Image, ImageDraw, ImageFont
+        
+        image = Image.new('1', (self.display.device.width, self.display.device.height), 0)
+        draw = ImageDraw.Draw(image)
+        
+        # Center "Booting up..." text
+        text = "Booting up..."
+        draw.text((20, 12), text, fill=1)
+        
+        self.display.device.display(image)
+    
+    def _start_boot_check_thread(self):
+        """Start background thread to poll for API availability."""
+        self.boot_check_thread = threading.Thread(target=self._boot_check_loop, daemon=True)
+        self.boot_check_thread.start()
+    
+    def _boot_check_loop(self):
+        """Background loop to check when limit-service becomes available."""
+        while self.boot_screen_active:
+            try:
+                if self.limit_api.is_available():
+                    logger.info("Limit-service API is now available, loading menu...")
+                    self.boot_screen_active = False
+                    # Initialize and display first menu
+                    with self.refresh_lock:
+                        self.display.scroll_index = 0
+                        self._refresh_current_menu()
+                    break
+                else:
+                    # Wait before next check
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"Error in boot check loop: {e}")
+                time.sleep(1)
     
     def _wake_display(self):
         """Wake display from sleep and reset inactivity timer."""
@@ -546,25 +594,30 @@ class DynamicMenu:
     
     def stop(self):
         """Stop the dynamic menu system and background threads."""
+        self.boot_screen_active = False
         self.stop_refresh.set()
         if self.refresh_thread:
             self.refresh_thread.join(timeout=2)
+        if self.boot_check_thread:
+            self.boot_check_thread.join(timeout=2)
     
     # Navigation methods
     
     def move_cursor_down(self):
         """Move cursor down."""
         self._wake_display()
-        if not self.edit_mode:
-            with self.refresh_lock:
-                self.display.move_cursor_down()
+        if self.boot_screen_active or self.edit_mode:
+            return
+        with self.refresh_lock:
+            self.display.move_cursor_down()
     
     def move_cursor_up(self):
         """Move cursor up."""
         self._wake_display()
-        if not self.edit_mode:
-            with self.refresh_lock:
-                self.display.move_cursor_up()
+        if self.boot_screen_active or self.edit_mode:
+            return
+        with self.refresh_lock:
+            self.display.move_cursor_up()
     
     def encoder_rotated(self, delta: int):
         """Handle encoder rotation.
@@ -573,6 +626,9 @@ class DynamicMenu:
             delta: Rotation delta (+/- for direction)
         """
         self._wake_display()
+        
+        if self.boot_screen_active:
+            return
         
         if self.edit_mode:
             # Calculate step size based on bar width for brightness_bar mode
@@ -672,7 +728,7 @@ class DynamicMenu:
         """Handle encoder button press."""
         self._wake_display()
         
-        if self.display_sleeping:
+        if self.display_sleeping or self.boot_screen_active:
             return
         
         if self.edit_mode:

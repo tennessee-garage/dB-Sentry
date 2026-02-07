@@ -1,7 +1,7 @@
 [Unit]
 Description=db-Sentry Interface Service
 Documentation=file:///home/garth/dB-Sentry/src/interface-service/README.md
-After=network.target pigpiod.service
+After=pigpiod.service
 
 [Service]
 Type=simple

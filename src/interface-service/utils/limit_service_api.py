@@ -23,6 +23,19 @@ class LimitServiceAPI:
         """
         self.base_url = base_url.rstrip('/')
     
+    def is_available(self) -> bool:
+        """Check if the limit-service API is available.
+        
+        Returns:
+            True if API responds, False otherwise.
+        """
+        try:
+            url = f"{self.base_url}/api/limits"
+            with urllib.request.urlopen(url, timeout=1) as response:
+                return response.status == 200
+        except Exception:
+            return False
+    
     def get_limits(self) -> Dict[str, float]:
         """Fetch current sensor limits from the API.
         
