@@ -29,7 +29,14 @@ menus:
     items:
       - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
       - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
+      - { text: "Shutdown", type: "submenu", submenu: "shutdown_confirm" }
       - { text: "Back", type: "back" }
+
+  shutdown_confirm:
+    items:
+      - { text: "shutdown now?", type: "static" }
+      - { text: "[no]", type: "back" }
+      - { text: "[yes]", type: "action", function: "shutdown_now" }
 
   sensors:
     items:

@@ -115,6 +115,7 @@ class DynamicMenu:
             "set_alert_hue_normal": self._set_alert_hue_normal,
             "set_alert_hue_warn": self._set_alert_hue_warn,
             "set_alert_hue_alert": self._set_alert_hue_alert,
+            "shutdown_now": self._shutdown_now,
         }
         
         # Apply saved user settings on startup
@@ -1131,3 +1132,11 @@ class DynamicMenu:
         """
         sensors = self.limit_api.get_sensors()
         return len(sensors)
+    
+    def _shutdown_now(self):
+        """Shutdown the system immediately."""
+        try:
+            logger.info("Shutting down system now...")
+            subprocess.run(["sudo", "shutdown", "now"], check=False)
+        except Exception as e:
+            logger.error(f"Failed to shutdown: {e}")
