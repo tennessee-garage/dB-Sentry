@@ -18,8 +18,12 @@ public:
 private:
 	PubSubClient _client;
 	WiFiClient _wifi;
+	String _clientIdValue;
 
 	String _clientId();
+	String _generateClientId();
+	String _getStoredClientId();
+	String _storeAndReturnClientId();
 	void _reconnect();
 };
 
