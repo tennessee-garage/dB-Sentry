@@ -14,6 +14,10 @@ import time
 import logging
 import threading
 import subprocess
+import json
+import re
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any, Union, Tuple
 from PIL import Image, ImageDraw, ImageFont
@@ -94,15 +98,25 @@ class DynamicMenu:
         # Limit service API client
         self.limit_api = LimitServiceAPI()
         self.sensor_limits: Dict[str, float] = {}  # Cache of sensor limits
+        self.last_sensor_list: List[str] = []  # Track sensor list changes
         
         # Current sensor being edited (for threshold_bar)
         self.editing_sensor: Optional[str] = None
         self.editing_sensor_live_value: float = 0.0  # Live current_reading from API
         self.editing_sensor_last_update: float = 0.0  # Last time live value was fetched
         
+        # Sensor details cache (for sensor menu display)
+        self.sensor_details_cache: Dict[str, Dict] = {}  # Cache sensor details to avoid polling
+        self.sensor_details_cache_time: Dict[str, float] = {}  # Last fetch time per sensor
+        
         # AP scan state
         self.scanning_aps: bool = False
         self.scanned_aps: List[Tuple[str, int]] = []
+
+        # Setup mode status cache
+        self.setup_mode_status: Optional[bool] = None
+        self.setup_mode_status_time: float = 0.0
+        self.setup_mode_status_ttl: float = 5.0
         
         # Function registry for dynamic content
         self.function_registry: Dict[str, Callable] = {
@@ -111,6 +125,9 @@ class DynamicMenu:
             "get_uptime": get_uptime,
             "get_service_status": get_service_status,
             "get_load_average": get_load_average,
+            "get_setup_mode_status": self._get_setup_mode_status,
+            "start_setup_mode": self._start_setup_mode,
+            "stop_setup_mode": self._stop_setup_mode,
             "get_sensor_count": self._get_sensor_count,
             "set_orientation_left": self._set_orientation_left,
             "set_orientation_right": self._set_orientation_right,
@@ -119,6 +136,7 @@ class DynamicMenu:
             "set_alert_hue_normal": self._set_alert_hue_normal,
             "set_alert_hue_warn": self._set_alert_hue_warn,
             "set_alert_hue_alert": self._set_alert_hue_alert,
+            "restart_now": self._restart_now,
             "shutdown_now": self._shutdown_now,
         }
         
@@ -264,13 +282,12 @@ class DynamicMenu:
         text = item.get("text", "")
         item_type = item.get("type", "static")
         
-        if item_type == "dynamic":
+        if item_type in ("dynamic", "dynamic_submenu"):
             func_name = item.get("function")
             if func_name:
                 value = self.dynamic_values.get(func_name, self._get_dynamic_value(func_name))
-                # Replace placeholder in text
-                for key in ["wifi_ssid}", "ip_address}", "uptime}", "service_status}", "load_average}"]:
-                    text = text.replace("{" + key, value)
+                # Replace any placeholder tokens in text/right_text
+                text = re.sub(r"\{[^}]+\}", str(value), text)
         
         elif item_type == "checkbox":
             # Add checkbox indicator
@@ -309,9 +326,14 @@ class DynamicMenu:
         
         # Preserve right-aligned text if present
         right_text = item.get("right_text")
+        if item_type in ("dynamic", "dynamic_submenu") and right_text:
+            func_name = item.get("function")
+            if func_name:
+                value = self.dynamic_values.get(func_name, self._get_dynamic_value(func_name))
+                right_text = re.sub(r"\{[^}]+\}", str(value), right_text)
 
         # Return dict with submenu flag for items that lead to special screens
-        if item_type in ("submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable"):
+        if item_type in ("submenu", "dynamic_submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable"):
             payload = {"text": text, "submenu": True}
             if right_text:
                 payload["right_text"] = right_text
@@ -331,11 +353,9 @@ class DynamicMenu:
         Returns:
             Menu configuration dictionary
         """
-        # Get sensor details from API
-        mps = 0.0
-        sensor_details = self.limit_api.get_sensor_details(sensor_name)
-        if sensor_details:
-            mps = sensor_details.get('measurements_per_second', 0.0)
+        # Use cached sensor details, don't re-fetch on every refresh
+        sensor_details = self.sensor_details_cache.get(sensor_name, {})
+        mps = sensor_details.get('measurements_per_second', 0.0)
         
         # Get current limit from cache
         limit = self.sensor_limits.get(sensor_name, 0.0)
@@ -471,6 +491,123 @@ class DynamicMenu:
             ]
             items.append({"text": "Back", "type": "back"})
         return {"items": items}
+
+    def _call_setup_service(self, path: str, method: str = "GET") -> Optional[Union[Dict, str]]:
+        """Call setup-service API endpoint.
+
+        Args:
+            path: API path (e.g., /api/status)
+            method: HTTP method
+
+        Returns:
+            Parsed JSON dict, raw text, or None on failure
+        """
+        url = f"http://localhost:5000{path}"
+        try:
+            req = urllib.request.Request(url, method=method)
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                body = resp.read().decode("utf-8").strip()
+                if not body:
+                    return ""
+                try:
+                    return json.loads(body)
+                except json.JSONDecodeError:
+                    return body
+        except Exception as e:
+            logger.error(f"Failed to call setup-service {path}: {e}")
+            return None
+
+    def _parse_setup_status_value(self, value: Any) -> Optional[bool]:
+        """Parse various status values into a boolean."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("on", "true", "1", "enabled", "running", "active", "started"):
+                return True
+            if normalized in ("off", "false", "0", "disabled", "stopped", "inactive"):
+                return False
+        return None
+
+    def _fetch_setup_mode_status(self, force: bool = False) -> Optional[bool]:
+        """Fetch setup mode status from setup-service with simple caching."""
+        now = time.time()
+        if not force and self.setup_mode_status_time and (now - self.setup_mode_status_time) < self.setup_mode_status_ttl:
+            return self.setup_mode_status
+
+        data = self._call_setup_service("/api/status", method="GET")
+        status: Optional[bool] = None
+
+        if isinstance(data, dict):
+            for key in ("ap_mode", "setup_mode", "enabled", "active", "running", "ap_running", "apMode", "ap_enabled", "status"):
+                if key in data:
+                    status = self._parse_setup_status_value(data.get(key))
+                    if status is not None:
+                        break
+        elif isinstance(data, str):
+            status = self._parse_setup_status_value(data)
+
+        self.setup_mode_status = status
+        self.setup_mode_status_time = now
+        return status
+
+    def _get_setup_mode_status(self) -> str:
+        """Get setup mode status as 'on'/'off'/'?' for display."""
+        status = self._fetch_setup_mode_status(force=False)
+        if status is True:
+            return "on"
+        if status is False:
+            return "off"
+        return "?"
+
+    def _set_setup_mode(self, enable: bool) -> None:
+        """Start or stop setup mode via setup-service."""
+        path = "/api/start-ap" if enable else "/api/stop-ap"
+        response = self._call_setup_service(path, method="POST")
+        if response is None:
+            # Try GET as fallback
+            response = self._call_setup_service(path, method="GET")
+
+        if response is not None:
+            self.setup_mode_status = enable
+            self.setup_mode_status_time = time.time()
+            self.dynamic_values["get_setup_mode_status"] = "on" if enable else "off"
+        else:
+            logger.error("Setup mode change failed.")
+
+        # Return to previous menu after action
+        self._navigate_back()
+
+    def _start_setup_mode(self) -> None:
+        """Enable setup mode."""
+        self._set_setup_mode(True)
+
+    def _stop_setup_mode(self) -> None:
+        """Disable setup mode."""
+        self._set_setup_mode(False)
+
+    def _create_setup_mode_confirm_menu_config(self) -> Dict:
+        """Create confirmation menu for toggling setup mode."""
+        status = self.setup_mode_status
+        if status is None:
+            cached_value = self.dynamic_values.get("get_setup_mode_status")
+            status = True if cached_value == "on" else False if cached_value == "off" else None
+
+        if status is True:
+            prompt = "Turn off setup mode?"
+            action_func = "stop_setup_mode"
+        else:
+            prompt = "Turn on setup mode?"
+            action_func = "start_setup_mode"
+
+        items = [
+            {"text": prompt, "type": "static"},
+            {"text": "[no]", "type": "back"},
+            {"text": "[yes]", "type": "action", "function": action_func}
+        ]
+        return {"items": items}
     
     def _get_current_menu_config(self) -> Dict:
         """Get configuration for current menu.
@@ -490,6 +627,10 @@ class DynamicMenu:
         # Check if this is the services submenu
         if self.current_menu_name == "services":
             return self._create_services_menu_config()
+
+        # Check if this is the setup mode confirm submenu
+        if self.current_menu_name == "setup_mode_confirm":
+            return self._create_setup_mode_confirm_menu_config()
         
         return self.config["menus"].get(self.current_menu_name, {})
     
@@ -506,8 +647,14 @@ class DynamicMenu:
             menu_config = self._get_current_menu_config()
             items = menu_config.get("items", [])
             
-            # Save current position if preserving
+            # Save current position if preserving, but reset if we're on sensors menu
+            # (sensors list can change dynamically)
             saved_scroll = self.display.scroll_index if preserve_position else 0
+            if self.current_menu_name == "main" and preserve_position:
+                # Check if sensor list size changed
+                has_sensor_summary = any(item.get("type") == "sensor_summary" for item in items)
+                if has_sensor_summary:
+                    saved_scroll = 0  # Reset scroll when sensors might have changed
             
             # Expand sensor_summary items into actual sensor list
             expanded_items = []
@@ -516,12 +663,19 @@ class DynamicMenu:
                     # Fetch active sensors and current limits from API
                     sensors = self.limit_api.get_sensors()
                     self.sensor_limits = self.limit_api.get_limits()
-                    sensor_names = sensors
+                    
+                    # Only show sensors that are actually active
+                    active_sensor_names = sensors if sensors else []
+                    
+                    # Check if sensor list changed - if so, reset scroll position
+                    if active_sensor_names != self.last_sensor_list:
+                        self.last_sensor_list = active_sensor_names
+                        saved_scroll = 0  # Reset on sensor change
                     
                     # Add the summary line
                     expanded_items.append(item)
-                    # Add individual sensor lines as clickable submenus
-                    for sensor_name in sorted(sensor_names):
+                    # Add individual sensor lines as clickable submenus (only active ones)
+                    for sensor_name in sorted(active_sensor_names):
                         sensor_item = {
                             "text": sensor_name,
                             "type": "submenu",
@@ -533,7 +687,7 @@ class DynamicMenu:
             
             # Refresh dynamic items on navigate
             for item in expanded_items:
-                if item.get("type") == "dynamic":
+                if item.get("type") in ("dynamic", "dynamic_submenu"):
                     func_name = item.get("function")
                     if func_name:
                         self.dynamic_values[func_name] = self._get_dynamic_value(func_name)
@@ -575,7 +729,7 @@ class DynamicMenu:
                     # Check which items need refresh
                     needs_refresh = False
                     for item in items:
-                        if item.get("type") == "dynamic" and self._should_refresh_item(item):
+                        if item.get("type") in ("dynamic", "dynamic_submenu") and self._should_refresh_item(item):
                             func_name = item.get("function")
                             if func_name:
                                 self.dynamic_values[func_name] = self._get_dynamic_value(func_name)
@@ -746,13 +900,22 @@ class DynamicMenu:
         expanded_items = []
         for item in items:
             if item.get("type") == "sensor_summary":
-                # Fetch current sensor limits from API
+                # Fetch current active sensors from API
+                sensors = self.limit_api.get_sensors()
                 self.sensor_limits = self.limit_api.get_limits()
+                
+                # Only show sensors that are actually active
+                active_sensor_names = sensors if sensors else []
+                
+                # Check if sensor list changed
+                if active_sensor_names != self.last_sensor_list:
+                    self.last_sensor_list = active_sensor_names
+                    logger.info(f"Sensor list changed to: {active_sensor_names}")
                 
                 # Add the summary line
                 expanded_items.append(item)
-                # Add individual sensor lines as clickable submenus
-                for sensor_name in sorted(self.sensor_limits.keys()):
+                # Add individual sensor lines as clickable submenus (only active ones)
+                for sensor_name in sorted(active_sensor_names):
                     sensor_item = {
                         "text": sensor_name,
                         "type": "submenu",
@@ -763,16 +926,19 @@ class DynamicMenu:
                 expanded_items.append(item)
         
         selected_index = self.display.get_selected_item_index()
+        logger.info(f"Button pressed: menu={self.current_menu_name}, selected_index={selected_index}, total_items={len(expanded_items)}")
         
         if selected_index >= len(expanded_items):
+            logger.warning(f"Selected index {selected_index} >= items count {len(expanded_items)}, ignoring")
             return
         
         item = expanded_items[selected_index]
         item_type = item.get("type", "static")
+        logger.info(f"Selected item type: {item_type}, text: {item.get('text', '')}")
         
         if item_type == "back":
             self._navigate_back()
-        elif item_type == "submenu":
+        elif item_type in ("submenu", "dynamic_submenu"):
             submenu_name = item.get("submenu")
             if submenu_name:
                 self._navigate_to(submenu_name)
@@ -799,6 +965,14 @@ class DynamicMenu:
         self.current_menu_name = menu_name
         # Reset display position when entering a new menu
         self.display.scroll_index = 0
+        
+        # Fetch sensor details once when entering a sensor menu
+        if menu_name.startswith("sensor_"):
+            sensor_name = menu_name.removeprefix("sensor_")
+            sensor_details = self.limit_api.get_sensor_details(sensor_name)
+            if sensor_details:
+                self.sensor_details_cache[sensor_name] = sensor_details
+                logger.info(f"Cached sensor details for {sensor_name}: {sensor_details}")
         
         # Start async AP scan if navigating to scan_aps
         if menu_name == "scan_aps":
@@ -990,6 +1164,8 @@ class DynamicMenu:
                 sensor_details = self.limit_api.get_sensor_details(self.editing_sensor)
                 if sensor_details:
                     self.editing_sensor_live_value = sensor_details.get('current_reading', 0.0)
+                    # Also update the cache so mps is fresh when exiting threshold mode
+                    self.sensor_details_cache[self.editing_sensor] = sensor_details
                 self.editing_sensor_last_update = current_time
         
         # Create image
@@ -1196,3 +1372,11 @@ class DynamicMenu:
             subprocess.run(["sudo", "shutdown", "now"], check=False)
         except Exception as e:
             logger.error(f"Failed to shutdown: {e}")
+
+    def _restart_now(self):
+        """Restart the system immediately."""
+        try:
+            logger.info("Restarting system now...")
+            subprocess.run(["sudo", "shutdown", "-r", "now"], check=False)
+        except Exception as e:
+            logger.error(f"Failed to restart: {e}")

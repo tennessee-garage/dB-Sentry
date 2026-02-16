@@ -10,11 +10,17 @@ menus:
 
   status:
     items:
+      - { text: "Network", type: "submenu", submenu: "network" }
+      - { text: "Services", type: "submenu", submenu: "services" }
+      - { text: "System", type: "submenu", submenu: "system" }
+      - { text: "Back", type: "back" }
+
+  network:
+    items:
+      - { text: "Setup Mode", type: "dynamic_submenu", submenu: "setup_mode_confirm", right_text: "[{setup_mode}]", function: "get_setup_mode_status", refresh: 5 }
       - { text: "WiFi: {wifi_ssid}", type: "dynamic", function: "get_wifi_ssid" }
       - { text: "IP: {ip_address}", type: "dynamic", function: "get_ip_address" }
       - { text: "Scan APs", type: "submenu", submenu: "scan_aps" }
-      - { text: "Services", type: "submenu", submenu: "services" }
-      - { text: "System", type: "submenu", submenu: "system" }
       - { text: "Back", type: "back" }
 
   scan_aps:
@@ -29,6 +35,7 @@ menus:
     items:
       - { text: "Uptime: {uptime}", type: "dynamic", function: "get_uptime", refresh: 1 }
       - { text: "Load: {load_average}", type: "dynamic", function: "get_load_average", refresh: 5 }
+      - { text: "Restart", type: "action", function: "restart_now" }
       - { text: "Shutdown", type: "submenu", submenu: "shutdown_confirm" }
       - { text: "Back", type: "back" }
 
