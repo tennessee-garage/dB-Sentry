@@ -1,0 +1,8 @@
+config.json
+*.pyc
+__pycache__/
+venv/
+.env
+*.log
+hostapd.conf
+dnsmasq.conf

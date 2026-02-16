@@ -1,0 +1,16 @@
+[Unit]
+Description=DB-Sentry Setup Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/garth/dB-Sentry/src/setup-service
+Environment=FLASK_ENV=production
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/garth/dB-Sentry/src/setup-service/venv/bin/python3 /home/garth/dB-Sentry/src/setup-service/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

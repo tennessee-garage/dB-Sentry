@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB-Sentry Setup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ DB-Sentry Setup</h1>
+            <p class="subtitle">Configure your sensor network</p>
+        </header>
+
+        <!-- Step 1: Welcome and Network Selection -->
+        <div id="step-1" class="step active">
+            <div class="card">
+                <h2>Welcome!</h2>
+                <p>Let's get your DB-Sentry system configured. First, select the WiFi network you want your Raspberry Pi and sensors to connect to.</p>
+                
+                <button id="scan-btn" class="btn btn-primary">Scan for Networks</button>
+                
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Scanning for networks...</p>
+                </div>
+                
+                <div id="network-list" class="network-list hidden"></div>
+            </div>
+        </div>
+
+        <!-- Step 2: Password Entry -->
+        <div id="step-2" class="step hidden">
+            <div class="card">
+                <h2>Enter WiFi Password</h2>
+                <p>Network: <strong id="selected-ssid"></strong></p>
+                
+                <div class="form-group">
+                    <label for="wifi-password">Password:</label>
+                    <input type="password" id="wifi-password" class="input" placeholder="Enter WiFi password">
+                    <button id="toggle-password" class="btn-icon" type="button">👁️</button>
+                </div>
+                
+                <div class="button-group">
+                    <button id="back-to-networks" class="btn btn-secondary">Back</button>
+                    <button id="submit-wifi" class="btn btn-primary">Continue</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Sensor Connection -->
+        <div id="step-3" class="step hidden">
+            <div class="card">
+                <h2>Turn On Your Sensors</h2>
+                <p>WiFi configured successfully! Now turn on your DB-Sensors so they can connect and receive the network information.</p>
+                
+                <div class="status-box">
+                    <p><strong>Connected to:</strong> <span id="configured-ssid"></span></p>
+                </div>
+
+                <div id="sensor-list" class="sensor-list">
+                    <h3>Connected Sensors</h3>
+                    <p class="help-text">Sensors will appear here as they connect...</p>
+                    <div id="sensors-container" class="sensors-container"></div>
+                </div>
+
+                <button id="finish-setup" class="btn btn-success">Finish Setup</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Complete -->
+        <div id="step-4" class="step hidden">
+            <div class="card success-card">
+                <h2>✅ Setup Complete!</h2>
+                <p>Your DB-Sentry system is now configured and connected.</p>
+                
+                <div class="summary">
+                    <p><strong>Network:</strong> <span id="final-ssid"></span></p>
+                    <p><strong>Sensors Connected:</strong> <span id="sensor-count">0</span></p>
+                </div>
+
+                <p class="help-text">The access point will now be disabled and your Raspberry Pi will connect to the configured network.</p>
+            </div>
+        </div>
+
+        <div id="error-message" class="error-message hidden"></div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
