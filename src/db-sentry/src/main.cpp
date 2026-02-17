@@ -4,6 +4,7 @@
 
 #include "main.h"
 #include "wifi-info.h"
+#include "NetworkSetup.h"
 
 #include <Logger.h>
 #include "WirelessControl.h"
@@ -60,7 +61,7 @@ void setup() {
     LOGGER->init(SYSLOG_SERVER, SYSLOG_PORT, HOSTNAME, APP_NAME);
 
     const char *creds[] = WIFI_CREDENTIALS_LIST;
-    WirelessControl::init_wifi_from_list(creds, HOSTNAME);
+    NetworkSetup::init_wifi_with_setup(creds, HOSTNAME, HOSTNAME);
 
     if (!WirelessControl::is_connected) {
         // Fast blink on alert LED

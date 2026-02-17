@@ -17,5 +17,9 @@
 #define MQTT_SERVER "db-sentry-hub"
 #endif
 
+#ifndef SETUP_WIFI
+#define SETUP_WIFI "DB-Sentry-Setup"
+#endif
+
 // Interval for LEQ computation in milliseconds
 #define LEQ_INTERVAL_MS 1000
