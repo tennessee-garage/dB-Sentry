@@ -1,0 +1,7 @@
+sudo systemctl disable bluetooth.service
+sudo systemctl disable ModemManager.service
+sudo systemctl disable cloud-init-local.service
+sudo systemctl disable cloud-init-main.service
+sudo systemctl disable cloud-init-network.service
+sudo systemctl disable cloud-config.service
+sudo systemctl disable cloud-final.service
