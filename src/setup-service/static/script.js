@@ -2,6 +2,7 @@
 
 let selectedSSID = null;
 let sensorCheckInterval = null;
+let knownSensorNames = new Set();
 
 // DOM Elements
 const scanBtn = document.getElementById('scan-btn');
@@ -30,8 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function showStep(stepNumber) {
     document.querySelectorAll('.step').forEach(step => {
         step.classList.remove('active');
+        step.classList.add('hidden');
     });
-    document.getElementById(`step-${stepNumber}`).classList.add('active');
+    const targetStep = document.getElementById(`step-${stepNumber}`);
+    targetStep.classList.remove('hidden');
+    targetStep.classList.add('active');
     
     // Start sensor polling when on step 3
     if (stepNumber === 3) {
@@ -186,7 +190,8 @@ function displaySensors(sensors) {
     
     sensors.forEach(sensor => {
         const sensorItem = document.createElement('div');
-        sensorItem.className = 'sensor-item';
+        const isKnownSensor = knownSensorNames.has(sensor.name);
+        sensorItem.className = isKnownSensor ? 'sensor-item' : 'sensor-item new-sensor';
         
         const time = new Date(sensor.connected_at).toLocaleTimeString();
         
@@ -197,6 +202,8 @@ function displaySensors(sensors) {
         
         container.appendChild(sensorItem);
     });
+
+    knownSensorNames = new Set(sensors.map(sensor => sensor.name));
 }
 
 // Complete setup

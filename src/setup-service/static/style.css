@@ -277,6 +277,9 @@ header h1 {
     padding: 12px 15px;
     border-radius: 8px;
     margin-bottom: 10px;
+}
+
+.sensor-item.new-sensor {
     animation: slideIn 0.3s ease-out;
 }
 

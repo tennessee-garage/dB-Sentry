@@ -10,6 +10,8 @@ from datetime import datetime
 import logging
 import traceback
 from werkzeug.exceptions import HTTPException
+from zeroconf import Zeroconf, ServiceInfo
+import socket
 
 # Get absolute paths for templates and static folders
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,12 +38,83 @@ CORS(app)
 config_manager = ConfigManager()
 network_manager = NetworkManager(config_manager)
 
+# mDNS (Zeroconf) setup
+MDNS_SERVICE_TYPE = "_http._tcp.local."
+MDNS_SERVICE_NAME = "db-sentry-setup"
+mdns = Zeroconf()
+mdns_info = None
+
+
+def _get_mdns_ip() -> str:
+    ip = network_manager.get_ip_address()
+    if ip:
+        return ip
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except Exception:
+        return "127.0.0.1"
+
+
+def register_mdns() -> None:
+    global mdns_info
+    ip = _get_mdns_ip()
+    info = ServiceInfo(
+        MDNS_SERVICE_TYPE,
+        f"{MDNS_SERVICE_NAME}.{MDNS_SERVICE_TYPE}",
+        addresses=[socket.inet_aton(ip)],
+        port=5000,
+        properties={"path": "/"},
+        server=f"{MDNS_SERVICE_NAME}.local."
+    )
+    if mdns_info:
+        try:
+            mdns.unregister_service(mdns_info)
+        except Exception:
+            pass
+    mdns.register_service(info)
+    mdns_info = info
+
+
+def _finalize_stop_ap(selected_ssid: str, selected_password: str) -> None:
+    """Perform AP stop and network transition in background after response is sent."""
+    try:
+        network_manager.stop_ap_mode()
+        state['ap_mode'] = False
+        state['network_cache'] = []
+        state['network_cache_at'] = None
+        register_mdns()
+
+        if not selected_ssid:
+            restored = network_manager.restore_previous_connection()
+            state['setup_complete'] = restored
+            if not restored:
+                logging.error("AP stopped but no configured WiFi and previous connection restore failed")
+            return
+
+        success = network_manager.connect_to_wifi(selected_ssid, selected_password)
+        if success:
+            state['setup_complete'] = True
+            return
+
+        restored = network_manager.restore_previous_connection()
+        state['setup_complete'] = restored
+        if not restored:
+            logging.error("AP stopped but failed to connect to selected WiFi and restore previous connection")
+    except Exception as error:
+        logging.error("Error during background AP stop workflow: %s", error)
+        logging.error(traceback.format_exc())
+    finally:
+        state['finish_in_progress'] = False
+
 # State management
 state = {
     'ap_mode': False,
     'selected_wifi': {'ssid': None, 'password': None},
     'connected_sensors': [],
-    'setup_complete': False
+    'setup_complete': False,
+    'finish_in_progress': False,
+    'network_cache': [],
+    'network_cache_at': None
 }
 
 
@@ -69,12 +142,17 @@ def start_ap():
     """Start access point mode."""
     if state['ap_mode']:
         return jsonify({'message': 'AP mode already active', 'success': True}), 200
+
+    # Scan networks before switching to AP mode (scan usually fails while AP is active)
+    state['network_cache'] = network_manager.scan_wifi_networks()
+    state['network_cache_at'] = datetime.now().isoformat()
     
     success = network_manager.start_ap_mode()
     if success:
         state['ap_mode'] = True
         state['connected_sensors'] = []
         state['setup_complete'] = False
+        register_mdns()
         return jsonify({
             'message': 'AP mode started', 
             'success': True,
@@ -86,53 +164,47 @@ def start_ap():
 
 @app.route('/api/stop-ap', methods=['POST'])
 def stop_ap():
-    """Stop access point mode and connect to configured WiFi."""
-    # Stop AP mode
-    network_manager.stop_ap_mode()
-    state['ap_mode'] = False
-
-    if not state['selected_wifi']['ssid']:
-        restored = network_manager.restore_previous_connection()
-        if restored:
-            return jsonify({
-                'message': 'AP stopped and previous WiFi restored',
-                'success': True
-            }), 200
+    """Acknowledge finish request, then stop AP and connect WiFi in background."""
+    if state['finish_in_progress']:
         return jsonify({
-            'message': 'AP stopped but no WiFi network configured',
-            'success': False
-        }), 400
-
-    # Connect to the selected WiFi
-    success = network_manager.connect_to_wifi(
-        state['selected_wifi']['ssid'],
-        state['selected_wifi']['password']
-    )
-
-    if success:
-        state['setup_complete'] = True
-        return jsonify({
-            'message': 'Connected to WiFi and AP stopped', 
+            'message': 'Finish setup already in progress.',
             'success': True
         }), 200
-    else:
-        restored = network_manager.restore_previous_connection()
-        if restored:
-            return jsonify({
-                'message': 'AP stopped and previous WiFi restored',
-                'success': True
-            }), 200
-        return jsonify({
-            'message': 'AP stopped but failed to connect to WiFi', 
-            'success': False
-        }), 500
+
+    state['finish_in_progress'] = True
+    selected_ssid = state['selected_wifi']['ssid']
+    selected_password = state['selected_wifi']['password']
+
+    response = jsonify({
+        'message': 'Finishing setup. AP will shut down and network will transition shortly.',
+        'success': True
+    })
+
+    @response.call_on_close
+    def _start_stop_ap_worker() -> None:
+        worker = threading.Thread(
+            target=_finalize_stop_ap,
+            args=(selected_ssid, selected_password),
+            daemon=True
+        )
+        worker.start()
+
+    return response, 200
 
 
 @app.route('/api/scan-networks', methods=['GET'])
 def scan_networks():
     """Scan for available WiFi networks."""
+    if state['ap_mode'] and state['network_cache']:
+        return jsonify({
+            'networks': state['network_cache'],
+            'success': True,
+            'cached': True,
+            'cached_at': state['network_cache_at']
+        }), 200
+
     networks = network_manager.scan_wifi_networks()
-    return jsonify({'networks': networks, 'success': True}), 200
+    return jsonify({'networks': networks, 'success': True, 'cached': False}), 200
 
 
 @app.route('/api/configure-wifi', methods=['POST'])
@@ -176,6 +248,7 @@ def sensor_register():
         'success': True,
         'ssid': state['selected_wifi']['ssid'],
         'password': state['selected_wifi']['password'],
+        'hostname': f"{MDNS_SERVICE_NAME}.local",
         'message': f'Sensor {sensor_name} registered'
     }), 200
 
@@ -230,4 +303,5 @@ if __name__ == '__main__':
     print(f"AP SSID: {config_manager.get('ap_ssid')}")
     print(f"AP Password: {config_manager.get('ap_password')}")
     print("=" * 50)
+    register_mdns()
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
