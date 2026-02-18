@@ -137,6 +137,14 @@ def captive_portal():
     return redirect('/', code=302)
 
 
+@app.route('/<path:path>', methods=['GET'])
+def captive_portal_fallback(path: str):
+    """Redirect unknown non-API/non-static GET routes to setup page for captive clients."""
+    if path.startswith('api/') or path.startswith('static/'):
+        return "Not found", 404
+    return redirect('/', code=302)
+
+
 @app.route('/api/start-ap', methods=['POST'])
 def start_ap():
     """Start access point mode."""

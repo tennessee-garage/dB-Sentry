@@ -13,6 +13,44 @@ class NetworkManager:
         self.config = config_manager
         self.ap_active = False
         self.previous_connection_name: Optional[str] = None
+        self.web_port = 5000
+
+    def _set_captive_http_redirect(self, interface: str) -> None:
+        """Redirect AP HTTP traffic (port 80) to the setup service port."""
+        ap_ip = str(self.config.get('ap_ip', '192.168.4.1'))
+        redirect_port = str(self.web_port)
+
+        subprocess.run([
+            'sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+            '-i', interface,
+            '-p', 'tcp',
+            '--dport', '80',
+            '-j', 'DNAT',
+            '--to-destination', f'{ap_ip}:{redirect_port}'
+        ], capture_output=True)
+
+        subprocess.run([
+            'sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
+            '-i', interface,
+            '-p', 'tcp',
+            '--dport', '80',
+            '-j', 'DNAT',
+            '--to-destination', f'{ap_ip}:{redirect_port}'
+        ], capture_output=True)
+
+    def _clear_captive_http_redirect(self, interface: str) -> None:
+        """Remove AP HTTP redirect rule if present."""
+        ap_ip = str(self.config.get('ap_ip', '192.168.4.1'))
+        redirect_port = str(self.web_port)
+
+        subprocess.run([
+            'sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+            '-i', interface,
+            '-p', 'tcp',
+            '--dport', '80',
+            '-j', 'DNAT',
+            '--to-destination', f'{ap_ip}:{redirect_port}'
+        ], capture_output=True)
 
     def get_ip_address(self) -> Optional[str]:
         """Get the current IP address for the AP interface."""
@@ -174,6 +212,8 @@ address=/#/{ap_ip}
                          capture_output=True)
             subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'up'], 
                          capture_output=True)
+
+            self._set_captive_http_redirect(interface)
             
             # Start dnsmasq
             subprocess.run(['sudo', 'systemctl', 'stop', 'dnsmasq'], 
@@ -203,6 +243,8 @@ address=/#/{ap_ip}
             # Stop hostapd and dnsmasq
             subprocess.run(['sudo', 'pkill', 'hostapd'], capture_output=True)
             subprocess.run(['sudo', 'pkill', 'dnsmasq'], capture_output=True)
+
+            self._clear_captive_http_redirect(interface)
             
             # Reset interface
             subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'down'], 
