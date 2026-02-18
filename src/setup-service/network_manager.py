@@ -192,6 +192,8 @@ dhcp-range={self.config.get('dhcp_range_start', '192.168.4.2')},{self.config.get
 domain=wlan
 # Captive portal - redirect all DNS queries to our AP
 address=/#/{ap_ip}
+# Captive portal URL hint (RFC 8910 / DHCP option 114)
+dhcp-option=114,http://{ap_ip}/
 """
             
             with open('dnsmasq.conf', 'w') as f:

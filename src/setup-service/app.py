@@ -134,7 +134,7 @@ def home():
 @app.route('/success.txt')  # Firefox
 def captive_portal():
     """Handle captive portal detection."""
-    return redirect('/', code=302)
+    return send_from_directory(TEMPLATE_DIR, 'setup.html')
 
 
 @app.route('/<path:path>', methods=['GET'])
@@ -142,7 +142,7 @@ def captive_portal_fallback(path: str):
     """Redirect unknown non-API/non-static GET routes to setup page for captive clients."""
     if path.startswith('api/') or path.startswith('static/'):
         return "Not found", 404
-    return redirect('/', code=302)
+    return send_from_directory(TEMPLATE_DIR, 'setup.html')
 
 
 @app.route('/api/start-ap', methods=['POST'])
