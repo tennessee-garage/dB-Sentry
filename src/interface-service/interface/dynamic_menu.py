@@ -138,6 +138,7 @@ class DynamicMenu:
             "set_alert_hue_alert": self._set_alert_hue_alert,
             "restart_now": self._restart_now,
             "shutdown_now": self._shutdown_now,
+            "reset_wifi": self._reset_wifi,
         }
         
         # Apply saved user settings on startup
@@ -404,6 +405,34 @@ class DynamicMenu:
         except Exception as e:
             logger.error(f"Failed to scan APs: {e}")
             return []
+
+    def _reset_wifi(self):
+        """Reset WiFi and allow system networking to reconnect using saved priorities."""
+        logger.info("Resetting WiFi")
+
+        # Keep this minimal: bounce radio/interface and let system-managed priority order reconnect
+        try:
+            subprocess.run(["wpa_cli", "-i", "wlan0", "disconnect"], check=False, timeout=3)
+            time.sleep(1)
+            subprocess.run(["wpa_cli", "-i", "wlan0", "reconfigure"], check=False, timeout=3)
+            subprocess.run(["wpa_cli", "-i", "wlan0", "reconnect"], check=False, timeout=3)
+        except Exception as e:
+            logger.warning(f"wpa_cli WiFi reset failed: {e}")
+            try:
+                subprocess.run(["nmcli", "radio", "wifi", "off"], check=False, timeout=3)
+                time.sleep(1)
+                subprocess.run(["nmcli", "radio", "wifi", "on"], check=False, timeout=3)
+            except Exception as fallback_error:
+                logger.warning(f"nmcli WiFi reset fallback failed: {fallback_error}")
+
+        time.sleep(2)
+
+        # Refresh displayed dynamic values immediately
+        self.dynamic_values["get_wifi_ssid"] = get_wifi_ssid()
+        self.dynamic_values["get_ip_address"] = get_ip_address()
+        self.refresh_timers["get_wifi_ssid"] = time.time()
+        self.refresh_timers["get_ip_address"] = time.time()
+        self._refresh_current_menu(preserve_position=True)
     
     def _do_ap_scan(self):
         """Background thread method to scan APs and update menu."""
