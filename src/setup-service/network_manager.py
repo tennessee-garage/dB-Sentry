@@ -194,8 +194,6 @@ domain=wlan
 address=/#/{ap_ip}
 # Captive portal URL hint (RFC 8910 / DHCP option 114)
 dhcp-option=114,http://{ap_ip}/
-# Force captive portal URL option even when client does not explicitly request it
-dhcp-option-force=114,http://{ap_ip}/
 """
             
             with open('dnsmasq.conf', 'w') as f:

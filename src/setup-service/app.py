@@ -1,5 +1,5 @@
 """DB-Sentry Setup Service - Raspberry Pi Access Point Configuration."""
-from flask import Flask, request, jsonify, render_template, send_from_directory, redirect, make_response
+from flask import Flask, request, jsonify, render_template, send_from_directory, redirect
 from flask_cors import CORS
 from config_manager import ConfigManager
 from network_manager import NetworkManager
@@ -134,10 +134,7 @@ def home():
 @app.route('/success.txt')  # Firefox
 def captive_portal():
     """Handle captive portal detection."""
-    response = make_response("""<!doctype html><html><head><meta charset=\"utf-8\"><title>DB-Sentry Setup</title></head><body>Login required</body></html>""")
-    response.headers['Content-Type'] = 'text/html; charset=utf-8'
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    return response
+    return send_from_directory(TEMPLATE_DIR, 'setup.html')
 
 
 @app.route('/<path:path>', methods=['GET'])
