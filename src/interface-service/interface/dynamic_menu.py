@@ -909,7 +909,12 @@ class DynamicMenu:
     
     def button_pressed(self):
         """Handle encoder button press."""
+        was_sleeping = self.display_sleeping
         self._wake_display()
+
+        # If the display was asleep, consume this press as wake-only
+        if was_sleeping:
+            return
         
         if self.display_sleeping or self.boot_screen_active:
             return
