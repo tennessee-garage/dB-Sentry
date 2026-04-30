@@ -38,8 +38,10 @@ class OledDisplay:
         )
         self.device = ssd1306(serial, width=128, height=32, mode=1)
         self.device.command(0xDA, 0x12) # Use alternate COM pin configuration
-        self.device._colstart += 4
-        self.device._colend += 4
+        # Preserve base column mapping and apply orientation-specific offset.
+        self._base_colstart = self.device._colstart
+        self._base_colend = self.device._colend
+        self._apply_column_offset_for_rotation(0)
 
         # Reduce contrast to minimize ghosting (was 255)
         self.device.contrast(contrast)
@@ -48,6 +50,17 @@ class OledDisplay:
         self.current_menu: Optional[Menu] = None
         self.scroll_index: int = 0
         self.rotation: int = 0  # 0 or 180 degrees
+
+    def _apply_column_offset_for_rotation(self, degrees: int) -> None:
+        """Apply panel-specific column offset for the given rotation.
+
+        This SSD1306 wiring requires a +4 column offset for one orientation.
+        Keeping the offset fixed for both modes causes a visible horizontal shift
+        when switching orientations.
+        """
+        offset = 4 if degrees == 180 else 0
+        self.device._colstart = self._base_colstart + offset
+        self.device._colend = self._base_colend + offset
 
     def screen_reset(self) -> None:
         """
@@ -84,6 +97,7 @@ class OledDisplay:
             raise ValueError("Rotation must be 0 or 180 degrees")
         
         self.rotation = degrees
+        self._apply_column_offset_for_rotation(degrees)
         
         # SSD1306 command for segment remap and COM scan direction
         if degrees == 0:
