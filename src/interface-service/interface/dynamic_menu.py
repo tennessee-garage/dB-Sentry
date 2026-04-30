@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Callable, Any, Union, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from .menu import Menu, MenuItem
+from .max17048_fuel_gauge import MAX17048FuelGauge
 from .oled_display import OledDisplay
 from utils.system_info import (
     get_wifi_ssid,
@@ -94,6 +95,10 @@ class DynamicMenu:
         # Dynamic content cache
         self.dynamic_values: Dict[str, str] = {}
         self.refresh_timers: Dict[str, float] = {}  # Last refresh time per function
+        self.battery_gauge = MAX17048FuelGauge()
+        self.battery_metrics_cache: Dict[str, Optional[float]] = {}
+        self.battery_metrics_cache_time: float = 0.0
+        self.battery_metrics_cache_ttl: float = 1.0
         
         # Limit service API client
         self.limit_api = LimitServiceAPI()
@@ -125,6 +130,10 @@ class DynamicMenu:
             "get_uptime": get_uptime,
             "get_service_status": get_service_status,
             "get_load_average": get_load_average,
+            "get_battery_voltage": self._get_battery_voltage,
+            "get_battery_charge_percentage": self._get_battery_charge_percentage,
+            "get_battery_discharge_rate": self._get_battery_discharge_rate,
+            "get_battery_time_left": self._get_battery_time_left,
             "get_setup_mode_status": self._get_setup_mode_status,
             "start_setup_mode": self._start_setup_mode,
             "stop_setup_mode": self._stop_setup_mode,
@@ -240,6 +249,54 @@ class DynamicMenu:
                 logger.error(f"Error calling {function_name}: {e}")
                 return "Error"
         return "Unknown"
+
+    def _get_battery_metrics(self, force: bool = False) -> Dict[str, Optional[float]]:
+        """Get cached battery metrics from the MAX17048."""
+        now = time.time()
+        if not force and self.battery_metrics_cache_time and (now - self.battery_metrics_cache_time) < self.battery_metrics_cache_ttl:
+            return self.battery_metrics_cache
+
+        if not self.battery_gauge.is_ready:
+            self.battery_metrics_cache = {}
+            self.battery_metrics_cache_time = now
+            return self.battery_metrics_cache
+
+        try:
+            self.battery_metrics_cache = self.battery_gauge.read_metrics()
+        except Exception as e:
+            logger.error(f"Failed to read battery metrics: {e}")
+            self.battery_metrics_cache = {}
+
+        self.battery_metrics_cache_time = now
+        return self.battery_metrics_cache
+
+    def _get_battery_voltage(self) -> str:
+        """Get formatted battery voltage for the status menu."""
+        voltage = self._get_battery_metrics().get("voltage_v")
+        return f"{voltage:.3f}V" if voltage is not None else "n/a"
+
+    def _get_battery_charge_percentage(self) -> str:
+        """Get formatted battery charge percentage for the status menu."""
+        charge = self._get_battery_metrics().get("soc_percent")
+        return f"{charge:.1f}%" if charge is not None else "n/a"
+
+    def _get_battery_discharge_rate(self) -> str:
+        """Get formatted battery rate for the status menu."""
+        rate = self._get_battery_metrics().get("crate_percent_per_hour")
+        return f"{rate:.1f}%/h" if rate is not None else "n/a"
+
+    def _get_battery_time_left(self) -> str:
+        """Get formatted estimated battery runtime for the status menu."""
+        metrics = self._get_battery_metrics()
+        soc_percent = metrics.get("soc_percent")
+        rate = metrics.get("crate_percent_per_hour")
+        if soc_percent is None or rate is None:
+            return "n/a"
+        estimate = self.battery_gauge.estimate_time_remaining(soc_percent, rate)
+        return self.battery_gauge.format_time_remaining(
+            estimate,
+            crate_percent_per_hour=rate,
+        )
     
     def _should_refresh_item(self, item: Dict) -> bool:
         """Check if item should be refreshed based on its refresh interval.
@@ -783,6 +840,7 @@ class DynamicMenu:
             self.refresh_thread.join(timeout=2)
         if self.boot_check_thread:
             self.boot_check_thread.join(timeout=2)
+        self.battery_gauge.close()
     
     # Navigation methods
     

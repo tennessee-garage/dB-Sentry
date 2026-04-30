@@ -2,6 +2,7 @@ python-dotenv
 pyyaml
 luma.oled
 gpiozero
+smbus2
 RPi.GPIO; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
 spidev; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')
 rpi_ws281x; sys_platform=='linux' and (platform_machine=='armv7l' or platform_machine=='aarch64')

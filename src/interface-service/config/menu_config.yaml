@@ -10,9 +10,18 @@ menus:
 
   status:
     items:
+      - { text: "Battery", type: "submenu", submenu: "battery" }
       - { text: "Network", type: "submenu", submenu: "network" }
       - { text: "Services", type: "submenu", submenu: "services" }
       - { text: "System", type: "submenu", submenu: "system" }
+      - { text: "Back", type: "back" }
+
+  battery:
+    items:
+      - { text: "Voltage: ", type: "dynamic", function: "get_battery_voltage", right_text: "{battery_voltage}", refresh: 1 }
+      - { text: "Charge: ", type: "dynamic", function: "get_battery_charge_percentage", right_text: "{battery_charge_percentage}", refresh: 1 }
+      - { text: "Discharge: ", type: "dynamic", function: "get_battery_discharge_rate", right_text: "{battery_discharge_rate}", refresh: 1 }
+      - { text: "Time left: ", type: "dynamic", function: "get_battery_time_left", right_text: "{battery_time_left}", refresh: 1 }
       - { text: "Back", type: "back" }
 
   network:
