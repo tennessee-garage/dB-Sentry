@@ -36,6 +36,24 @@ LED_COUNT=30
 python main.py
 ```
 
+## MQTT debug CLI
+
+Use this helper to print incoming level data from MQTT by sensor:
+
+```bash
+python monitor-levels.py
+```
+
+Useful options:
+
+```bash
+# custom connection/topic
+python monitor-levels.py --broker localhost --port 1883 --topic "db_sentry/#"
+
+# also display payloads that could not be parsed as numeric levels
+python monitor-levels.py --show-unparsed
+```
+
 ## Running as a systemd service
 
 To run the service automatically on boot:
