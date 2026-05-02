@@ -39,11 +39,13 @@ class InfluxV1Client:
 		except Exception:
 			return []
 
+	SETTINGS_RP = "settings_rp"
+
 	def read_sensor_limits(self) -> Dict[str, int]:
 		"""Find the dBA limits currently set (if any) for any sensorss."""
 		try:
 			limits = {}
-			result = self.client.query("SELECT LAST(value) FROM sensor_limits GROUP BY sensor")
+			result = self.client.query(f'SELECT LAST(value) FROM "{self.SETTINGS_RP}"."sensor_limits" GROUP BY sensor')
 			if not isinstance(result, ResultSet):
 				return {}
 
@@ -57,14 +59,14 @@ class InfluxV1Client:
 
 	def read_window_seconds(self) -> int:
 		"""Read the configured moving average window in seconds."""
-		result = self.client.query(f"SELECT LAST(value) FROM window_seconds")
+		result = self.client.query(f'SELECT LAST(value) FROM "{self.SETTINGS_RP}"."window_seconds"')
 		if not isinstance(result, ResultSet):
-			return 1
+			return 30
 		
 		for measurement, points in result.items():
 			for point in points:
 				return int(point['last'])
-		return 1
+		return 30
 	
 	def set_sensor_limit(self, sensor: str, limit: int):
 		"""Set the dBA limit for a specific sensor."""
@@ -73,7 +75,7 @@ class InfluxV1Client:
 			"tags": {"sensor": sensor},
 			"fields": {"value": int(limit)}
 		}]
-		self.client.write_points(point)
+		self.client.write_points(point, retention_policy=self.SETTINGS_RP)
 
 	def set_window_seconds(self, seconds: int):
 		"""Set the moving average window in seconds."""
@@ -81,7 +83,7 @@ class InfluxV1Client:
 			"measurement": "window_seconds",
 			"fields": {"value": int(seconds)}
 		}]
-		self.client.write_points(point)
+		self.client.write_points(point, retention_policy=self.SETTINGS_RP)
 
 	def set_sensor_alarm_state(self, sensor: str, alarm_state: str):
 		"""Set the alarm state for a specific sensor."""
