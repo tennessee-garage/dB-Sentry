@@ -44,9 +44,16 @@ class DynamicMenu:
     
     INACTIVITY_TIMEOUT = 60  # Seconds before display sleeps
     BATTERY_HISTORY_REFRESH_SECONDS = 60.0
-    BATTERY_BACKGROUND_SAMPLE_SECONDS = 60.0
+    MENU_LOOP_SLEEP_SECONDS = 0.5
     
-    def __init__(self, display: OledDisplay, config_path: Optional[str] = None, led_controller=None, led_ipc_server=None):
+    def __init__(
+        self,
+        display: OledDisplay,
+        config_path: Optional[str] = None,
+        led_controller=None,
+        led_ipc_server=None,
+        battery_gauge: Optional[MAX17048FuelGauge] = None,
+    ):
         """Initialize dynamic menu system.
         
         Args:
@@ -95,14 +102,14 @@ class DynamicMenu:
         self.last_activity = time.time()
         self.display_sleeping = False
         self.battery_history_last_render: float = 0.0
-        self.battery_background_sample_last: float = 0.0
         
         # Dynamic content cache
         self.dynamic_values: Dict[str, str] = {}
         self.refresh_timers: Dict[str, float] = {}  # Last refresh time per function
-        self.battery_gauge = MAX17048FuelGauge(
+        self.battery_gauge = battery_gauge or MAX17048FuelGauge(
             charge_trend_window_size=self.display.device.width
         )
+        self._owns_battery_gauge = battery_gauge is None
         self.battery_metrics_cache: Dict[str, Optional[float]] = {}
         self.battery_metrics_cache_time: float = 0.0
         self.battery_metrics_cache_ttl: float = 1.0
@@ -814,17 +821,6 @@ class DynamicMenu:
         """Background loop for refreshing dynamic menu items."""
         while not self.stop_refresh.is_set():
             try:
-                # Always keep battery histories updated, even when not viewing battery menus.
-                now = time.time()
-                if (now - self.battery_background_sample_last) >= self.BATTERY_BACKGROUND_SAMPLE_SECONDS:
-                    try:
-                        self.battery_metrics_cache = self.battery_gauge.read_metrics()
-                        self.battery_metrics_cache_time = now
-                    except Exception as sample_error:
-                        logger.debug("Battery background sample failed: %s", sample_error)
-                    finally:
-                        self.battery_background_sample_last = now
-
                 # Check for display sleep
                 self._check_sleep()
                 
@@ -852,7 +848,7 @@ class DynamicMenu:
                             self._refresh_current_menu(preserve_position=True)
                 
                 # Sleep briefly to avoid busy-waiting
-                time.sleep(0.1)
+                time.sleep(self.MENU_LOOP_SLEEP_SECONDS)
             
             except Exception as e:
                 logger.error(f"Error in refresh loop: {e}")
@@ -865,7 +861,8 @@ class DynamicMenu:
             self.refresh_thread.join(timeout=2)
         if self.boot_check_thread:
             self.boot_check_thread.join(timeout=2)
-        self.battery_gauge.close()
+        if self._owns_battery_gauge:
+            self.battery_gauge.close()
     
     # Navigation methods
     

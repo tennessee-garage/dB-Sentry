@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import deque
 import logging
+import threading
 import time
 from typing import Any, Deque, Dict, Optional, Tuple
 
@@ -71,6 +72,9 @@ class MAX17048FuelGauge:
         self._soc_history: Deque[float] = deque(maxlen=self.charge_trend_window_size)
         self._last_soc_sample: Optional[float] = None
         self._last_soc_sample_time: Optional[float] = None
+        self._sample_lock = threading.Lock()
+        self._sample_stop = threading.Event()
+        self._sample_thread: Optional[threading.Thread] = None
 
         self._initialize_bus()
         self._initialize_alert_input()
@@ -470,35 +474,67 @@ class MAX17048FuelGauge:
 
     def read_metrics(self) -> Dict[str, Optional[float]]:
         """Read a standard metrics payload for consumers."""
-        metrics: Dict[str, Optional[float]] = {
-            "voltage_v": None,
-            "soc_percent": None,
-            "crate_percent_per_hour": None,
-            "crate_smoothed_percent_per_hour": None,
-            "charge_percent_per_minute": None,
-            "status_raw": None,
-            "version_raw": None,
-            "alert_pin_asserted": None,
-        }
+        with self._sample_lock:
+            metrics: Dict[str, Optional[float]] = {
+                "voltage_v": None,
+                "soc_percent": None,
+                "crate_percent_per_hour": None,
+                "crate_smoothed_percent_per_hour": None,
+                "charge_percent_per_minute": None,
+                "status_raw": None,
+                "version_raw": None,
+                "alert_pin_asserted": None,
+            }
 
-        metrics["voltage_v"] = self.read_cell_voltage_v()
-        metrics["soc_percent"] = self.read_soc_percent()
-        self._soc_history.append(metrics["soc_percent"])
-        metrics["charge_percent_per_minute"] = self._record_charge_percentage_per_minute_sample(
-            metrics["soc_percent"]
-        )
-        metrics["crate_percent_per_hour"] = self.read_crate_percent_per_hour(record_history=True)
-        metrics["crate_smoothed_percent_per_hour"] = self.get_smoothed_crate_percent_per_hour()
-        metrics["status_raw"] = float(self.read_status())
-        metrics["version_raw"] = float(self.read_version())
+            metrics["voltage_v"] = self.read_cell_voltage_v()
+            metrics["soc_percent"] = self.read_soc_percent()
+            self._soc_history.append(metrics["soc_percent"])
+            metrics["charge_percent_per_minute"] = self._record_charge_percentage_per_minute_sample(
+                metrics["soc_percent"]
+            )
+            metrics["crate_percent_per_hour"] = self.read_crate_percent_per_hour(record_history=True)
+            metrics["crate_smoothed_percent_per_hour"] = self.get_smoothed_crate_percent_per_hour()
+            metrics["status_raw"] = float(self.read_status())
+            metrics["version_raw"] = float(self.read_version())
 
-        alert_state = self.is_alert_asserted()
-        metrics["alert_pin_asserted"] = None if alert_state is None else float(alert_state)
+            alert_state = self.is_alert_asserted()
+            metrics["alert_pin_asserted"] = None if alert_state is None else float(alert_state)
 
-        return metrics
+            return metrics
+
+    def start_background_sampling(self, sample_interval_seconds: float = 60.0) -> None:
+        """Start a background sampler thread that polls metrics periodically."""
+        if sample_interval_seconds <= 0:
+            raise ValueError("sample_interval_seconds must be positive")
+
+        if self._sample_thread and self._sample_thread.is_alive():
+            return
+
+        self._sample_stop.clear()
+
+        def _sample_loop() -> None:
+            while not self._sample_stop.is_set():
+                try:
+                    self.read_metrics()
+                except Exception as exc:
+                    logger.debug("MAX17048 background sample failed: %s", exc)
+
+                self._sample_stop.wait(timeout=sample_interval_seconds)
+
+        self._sample_thread = threading.Thread(target=_sample_loop, daemon=True)
+        self._sample_thread.start()
+
+    def stop_background_sampling(self) -> None:
+        """Stop the background sampler thread if running."""
+        self._sample_stop.set()
+        if self._sample_thread:
+            self._sample_thread.join(timeout=2)
+            self._sample_thread = None
 
     def close(self) -> None:
         """Release I2C and GPIO resources."""
+        self.stop_background_sampling()
+
         if self.alert_button is not None:
             try:
                 self.alert_button.close()

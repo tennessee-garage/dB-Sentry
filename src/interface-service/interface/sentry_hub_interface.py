@@ -10,6 +10,7 @@ from interface.oled_display import OledDisplay
 from interface.dynamic_menu import DynamicMenu
 from interface.encoder import EncoderControl
 from interface.led_controller import LEDController
+from interface.max17048_fuel_gauge import MAX17048FuelGauge
 from ipc.led_ipc_server import LEDIPCServer
 
 logger = logging.getLogger(__name__)
@@ -34,12 +35,20 @@ class SentryHubInterface:
         self.led_ipc_server = LEDIPCServer(self.led_controller)
         self.led_ipc_server.start()
         logger.info("LED IPC server started")
+
+        # Initialize battery gauge and periodic sampling (once per minute)
+        self.battery_gauge = MAX17048FuelGauge(
+            charge_trend_window_size=self.display.device.width
+        )
+        self.battery_gauge.start_background_sampling(sample_interval_seconds=60.0)
+        logger.info("Battery gauge initialized and background sampling started")
         
         # Initialize dynamic menu
         self.menu = DynamicMenu(
             display=self.display,
             led_controller=self.led_controller,
-            led_ipc_server=self.led_ipc_server
+            led_ipc_server=self.led_ipc_server,
+            battery_gauge=self.battery_gauge,
         )
         logger.info("Dynamic menu initialized")
         
@@ -91,6 +100,9 @@ class SentryHubInterface:
         
         # Stop menu refresh thread
         self.menu.stop()
+
+        # Stop battery sampler and release I2C/GPIO resources
+        self.battery_gauge.close()
         
         # Clear display
         self.display.clear()
