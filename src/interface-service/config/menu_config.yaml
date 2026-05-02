@@ -22,6 +22,7 @@ menus:
       - { text: "Charge: ", type: "dynamic", function: "get_battery_charge_percentage", right_text: "{battery_charge_percentage}", refresh: 1 }
       - { text: "Discharge: ", type: "dynamic", function: "get_battery_discharge_rate", right_text: "{battery_discharge_rate}", refresh: 1 }
       - { text: "Time left: ", type: "dynamic", function: "get_battery_time_left", right_text: "{battery_time_left}", refresh: 1 }
+      - { text: "History", type: "battery_history" }
       - { text: "Back", type: "back" }
 
   network:

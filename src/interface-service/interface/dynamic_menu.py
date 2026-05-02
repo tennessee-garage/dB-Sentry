@@ -91,11 +91,14 @@ class DynamicMenu:
         self.stop_refresh = threading.Event()
         self.last_activity = time.time()
         self.display_sleeping = False
+        self.battery_history_last_render: float = 0.0
         
         # Dynamic content cache
         self.dynamic_values: Dict[str, str] = {}
         self.refresh_timers: Dict[str, float] = {}  # Last refresh time per function
-        self.battery_gauge = MAX17048FuelGauge()
+        self.battery_gauge = MAX17048FuelGauge(
+            charge_trend_window_size=self.display.device.width
+        )
         self.battery_metrics_cache: Dict[str, Optional[float]] = {}
         self.battery_metrics_cache_time: float = 0.0
         self.battery_metrics_cache_ttl: float = 1.0
@@ -393,7 +396,7 @@ class DynamicMenu:
                 right_text = re.sub(r"\{[^}]+\}", str(value), right_text)
 
         # Return dict with submenu flag for items that lead to special screens
-        if item_type in ("submenu", "dynamic_submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable"):
+        if item_type in ("submenu", "dynamic_submenu", "threshold_bar", "brightness_bar", "hue_bar", "editable", "battery_history"):
             payload = {"text": text, "submenu": True}
             if right_text:
                 payload["right_text"] = right_text
@@ -810,23 +813,28 @@ class DynamicMenu:
                 # Check for display sleep
                 self._check_sleep()
                 
-                if not self.display_sleeping and not self.edit_mode:
-                    menu_config = self._get_current_menu_config()
-                    items = menu_config.get("items", [])
-                    
-                    # Check which items need refresh
-                    needs_refresh = False
-                    for item in items:
-                        if item.get("type") in ("dynamic", "dynamic_submenu") and self._should_refresh_item(item):
-                            func_name = item.get("function")
-                            if func_name:
-                                self.dynamic_values[func_name] = self._get_dynamic_value(func_name)
-                                self.refresh_timers[func_name] = time.time()
-                                needs_refresh = True
-                    
-                    # Refresh display if any items changed
-                    if needs_refresh:
-                        self._refresh_current_menu(preserve_position=True)
+                if not self.display_sleeping:
+                    if self.edit_mode and self.edit_config.get("type") == "battery_history":
+                        if (time.time() - self.battery_history_last_render) >= 1.0:
+                            self._render_battery_history_graph()
+                            self.battery_history_last_render = time.time()
+                    elif not self.edit_mode:
+                        menu_config = self._get_current_menu_config()
+                        items = menu_config.get("items", [])
+                        
+                        # Check which items need refresh
+                        needs_refresh = False
+                        for item in items:
+                            if item.get("type") in ("dynamic", "dynamic_submenu") and self._should_refresh_item(item):
+                                func_name = item.get("function")
+                                if func_name:
+                                    self.dynamic_values[func_name] = self._get_dynamic_value(func_name)
+                                    self.refresh_timers[func_name] = time.time()
+                                    needs_refresh = True
+                        
+                        # Refresh display if any items changed
+                        if needs_refresh:
+                            self._refresh_current_menu(preserve_position=True)
                 
                 # Sleep briefly to avoid busy-waiting
                 time.sleep(0.1)
@@ -980,6 +988,12 @@ class DynamicMenu:
             return
         
         if self.edit_mode:
+            if self.edit_config.get("type") == "battery_history":
+                self.edit_mode = False
+                self.edit_config = {}
+                self._refresh_current_menu()
+                return
+
             # Save and exit edit mode
             self._save_edit_value()
             self.edit_mode = False
@@ -1046,6 +1060,8 @@ class DynamicMenu:
             self._enter_hue_bar_mode(item)
         elif item_type == "threshold_bar":
             self._enter_threshold_bar_mode(item)
+        elif item_type == "battery_history":
+            self._enter_battery_history_mode(item)
         elif item_type == "action":
             self._handle_action(item)
     
@@ -1291,6 +1307,49 @@ class DynamicMenu:
         draw.text((4, 20), value_str, fill=1)
         
         # Display the image
+        self.display.device.display(image)
+
+    def _enter_battery_history_mode(self, item: Dict):
+        """Enter battery history graph mode."""
+        self.edit_mode = True
+        self.edit_config = item
+        self.battery_history_last_render = 0.0
+        self._render_battery_history_graph()
+
+    def _render_battery_history_graph(self):
+        """Render full-width battery charge history graph on fixed 0-100 y-axis."""
+        metrics = self.battery_gauge.read_metrics()
+
+        width = self.display.device.width
+        height = self.display.device.height
+        graph_top = 8
+        graph_height = max(1, height - graph_top)
+
+        image = Image.new('1', (width, height), 0)
+        draw = ImageDraw.Draw(image)
+
+        latest_soc = metrics.get("soc_percent")
+        latest_soc_text = "n/a" if latest_soc is None else f"{latest_soc:.1f}%"
+        draw.text((0, 0), f"Hist {latest_soc_text}", fill=1)
+        draw.text((104, 0), "100", fill=1)
+
+        points = self.battery_gauge.get_soc_history_plot_points(
+            graph_x=0,
+            graph_y=graph_top,
+            graph_width=width,
+            graph_height=graph_height,
+            min_percent=0.0,
+            max_percent=100.0,
+        )
+
+        draw.text((118, height - 8), "0", fill=1)
+
+        if len(points) >= 2:
+            draw.line(points, fill=1)
+        elif len(points) == 1:
+            x, y = points[0]
+            draw.point((x, y), fill=1)
+
         self.display.device.display(image)
     
     def _enter_hue_bar_mode(self, item: Dict):

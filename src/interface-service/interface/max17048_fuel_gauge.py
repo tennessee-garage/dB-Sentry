@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from collections import deque
 import logging
-from typing import Any, Deque, Dict, Optional
+import time
+from typing import Any, Deque, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +54,23 @@ class MAX17048FuelGauge:
         alert_pin: Optional[int] = 4,
         use_alert_gpio: bool = True,
         discharge_rate_window_size: int = 30,
+        charge_trend_window_size: int = 128,
     ) -> None:
         self.bus_number = bus_number
         self.address = address
         self.alert_pin = alert_pin
         self.use_alert_gpio = use_alert_gpio
         self.discharge_rate_window_size = max(1, int(discharge_rate_window_size))
+        self.charge_trend_window_size = max(1, int(charge_trend_window_size))
 
         self.bus: Optional[Any] = None
         self.alert_button: Optional[Any] = None
         self._init_error: Optional[str] = None
         self._crate_history: Deque[float] = deque(maxlen=self.discharge_rate_window_size)
+        self._charge_per_minute_history: Deque[float] = deque(maxlen=self.charge_trend_window_size)
+        self._soc_history: Deque[float] = deque(maxlen=self.charge_trend_window_size)
+        self._last_soc_sample: Optional[float] = None
+        self._last_soc_sample_time: Optional[float] = None
 
         self._initialize_bus()
         self._initialize_alert_input()
@@ -149,9 +156,226 @@ class MAX17048FuelGauge:
             return None
         return sum(self._crate_history) / len(self._crate_history)
 
+    def _record_charge_percentage_per_minute_sample(
+        self,
+        soc_percent: float,
+        sample_time: Optional[float] = None,
+    ) -> Optional[float]:
+        """Record one SOC sample and store derived rate in %/minute.
+
+        Returns the latest computed rate when at least one previous sample exists,
+        otherwise None for the first sample.
+        """
+        now = sample_time if sample_time is not None else time.time()
+
+        if self._last_soc_sample is None or self._last_soc_sample_time is None:
+            self._last_soc_sample = soc_percent
+            self._last_soc_sample_time = now
+            return None
+
+        elapsed_seconds = now - self._last_soc_sample_time
+        if elapsed_seconds <= 0:
+            return None
+
+        delta_soc = soc_percent - self._last_soc_sample
+        rate_per_minute = delta_soc / (elapsed_seconds / 60.0)
+
+        self._last_soc_sample = soc_percent
+        self._last_soc_sample_time = now
+        self._charge_per_minute_history.append(rate_per_minute)
+        return rate_per_minute
+
+    def get_charge_percentage_per_minute_samples(self) -> list[float]:
+        """Return the rolling history of SOC change rate samples (%/minute)."""
+        return list(self._charge_per_minute_history)
+
+    def get_soc_percent_history_samples(self) -> list[float]:
+        """Return the rolling history of SOC percentage samples (0-100)."""
+        return list(self._soc_history)
+
+    def get_latest_charge_percentage_per_minute(self) -> Optional[float]:
+        """Return the most recent SOC change rate sample (%/minute)."""
+        if not self._charge_per_minute_history:
+            return None
+        return self._charge_per_minute_history[-1]
+
+    def get_normalized_charge_trend_y(
+        self,
+        graph_height: int,
+        center_zero: bool = True,
+        fixed_scale_abs: Optional[float] = None,
+    ) -> list[int]:
+        """Return full-width OLED y-coordinates for the charge trend.
+
+        The returned list length is always `charge_trend_window_size`, matching
+        OLED pixel width when configured that way. Values are y pixel positions
+        in the range 0..graph_height-1.
+
+        Args:
+            graph_height: Graph height in pixels.
+            center_zero: If True, 0 %/min is centered vertically and values are
+                normalized symmetrically around zero.
+            fixed_scale_abs: Optional fixed absolute scale for center-zero mode.
+                For example, 0.5 means +/-0.5 %/min spans full graph height.
+
+        Returns:
+            List of normalized y coordinates for plotting.
+        """
+        if graph_height <= 0:
+            raise ValueError("graph_height must be positive")
+
+        width = self.charge_trend_window_size
+        samples = list(self._charge_per_minute_history)
+
+        # Left-pad so callers always receive a full-width series.
+        if len(samples) < width:
+            pad_value = 0.0 if center_zero else (samples[0] if samples else 0.0)
+            samples = [pad_value] * (width - len(samples)) + samples
+
+        y_max = graph_height - 1
+
+        if center_zero:
+            if fixed_scale_abs is not None and fixed_scale_abs > 0:
+                max_abs = fixed_scale_abs
+            else:
+                max_abs = max((abs(v) for v in samples), default=0.0)
+                if max_abs == 0:
+                    max_abs = 1.0
+
+            mid = y_max / 2.0
+            amp = y_max / 2.0
+            points = [int(round(mid - (value / max_abs) * amp)) for value in samples]
+        else:
+            low = min(samples) if samples else 0.0
+            high = max(samples) if samples else 0.0
+            span = high - low
+            if span == 0:
+                span = 1.0
+
+            points = [
+                int(round(y_max * (1.0 - ((value - low) / span))))
+                for value in samples
+            ]
+
+        return [max(0, min(y_max, y)) for y in points]
+
+    def get_charge_trend_plot_points(
+        self,
+        graph_x: int,
+        graph_y: int,
+        graph_width: int,
+        graph_height: int,
+        center_zero: bool = True,
+        fixed_scale_abs: Optional[float] = None,
+    ) -> Tuple[list[tuple[int, int]], Optional[int]]:
+        """Return OLED-ready plot points and optional zero-axis y position.
+
+        Args:
+            graph_x: Left x origin of graph area.
+            graph_y: Top y origin of graph area.
+            graph_width: Graph width in pixels.
+            graph_height: Graph height in pixels.
+            center_zero: If True, include a centered zero-axis reference.
+            fixed_scale_abs: Optional fixed absolute scale for center-zero mode.
+
+        Returns:
+            A tuple of (plot_points, zero_axis_y):
+            - plot_points: list of (x, y) coordinates clipped to graph bounds.
+            - zero_axis_y: y coordinate for 0 %/min line, or None when not used.
+        """
+        if graph_width <= 0:
+            raise ValueError("graph_width must be positive")
+
+        y_values = self.get_normalized_charge_trend_y(
+            graph_height=graph_height,
+            center_zero=center_zero,
+            fixed_scale_abs=fixed_scale_abs,
+        )
+
+        if len(y_values) > graph_width:
+            y_values = y_values[-graph_width:]
+        elif len(y_values) < graph_width:
+            pad_y = int(round((graph_height - 1) / 2.0)) if center_zero else (y_values[0] if y_values else 0)
+            y_values = [pad_y] * (graph_width - len(y_values)) + y_values
+
+        points = [(graph_x + idx, graph_y + y) for idx, y in enumerate(y_values)]
+
+        zero_axis_y: Optional[int]
+        if center_zero:
+            zero_axis_y = graph_y + int(round((graph_height - 1) / 2.0))
+        else:
+            zero_axis_y = None
+
+        return points, zero_axis_y
+
+    def get_normalized_soc_history_y(
+        self,
+        graph_height: int,
+        min_percent: float = 0.0,
+        max_percent: float = 100.0,
+    ) -> list[int]:
+        """Return full-width OLED y-coordinates for SOC history on fixed scale.
+
+        The returned list length is always `charge_trend_window_size`.
+        """
+        if graph_height <= 0:
+            raise ValueError("graph_height must be positive")
+        if max_percent <= min_percent:
+            raise ValueError("max_percent must be greater than min_percent")
+
+        width = self.charge_trend_window_size
+        samples = list(self._soc_history)
+
+        if len(samples) < width:
+            pad_value = min_percent
+            samples = [pad_value] * (width - len(samples)) + samples
+
+        y_max = graph_height - 1
+        span = max_percent - min_percent
+
+        points = [
+            int(round(y_max * (1.0 - ((max(min_percent, min(max_percent, value)) - min_percent) / span))))
+            for value in samples
+        ]
+        return [max(0, min(y_max, y)) for y in points]
+
+    def get_soc_history_plot_points(
+        self,
+        graph_x: int,
+        graph_y: int,
+        graph_width: int,
+        graph_height: int,
+        min_percent: float = 0.0,
+        max_percent: float = 100.0,
+    ) -> list[tuple[int, int]]:
+        """Return OLED-ready plot points for SOC history on fixed 0-100 style axis."""
+        if graph_width <= 0:
+            raise ValueError("graph_width must be positive")
+
+        y_values = self.get_normalized_soc_history_y(
+            graph_height=graph_height,
+            min_percent=min_percent,
+            max_percent=max_percent,
+        )
+
+        if len(y_values) > graph_width:
+            y_values = y_values[-graph_width:]
+        elif len(y_values) < graph_width:
+            pad_y = graph_height - 1
+            y_values = [pad_y] * (graph_width - len(y_values)) + y_values
+
+        return [(graph_x + idx, graph_y + y) for idx, y in enumerate(y_values)]
+
     def clear_crate_history(self) -> None:
         """Clear accumulated CRate history used for smoothing."""
         self._crate_history.clear()
+
+    def clear_charge_trend_history(self) -> None:
+        """Clear SOC trend history and reset previous sample state."""
+        self._charge_per_minute_history.clear()
+        self._soc_history.clear()
+        self._last_soc_sample = None
+        self._last_soc_sample_time = None
 
     @staticmethod
     def estimate_time_remaining(
@@ -251,6 +475,7 @@ class MAX17048FuelGauge:
             "soc_percent": None,
             "crate_percent_per_hour": None,
             "crate_smoothed_percent_per_hour": None,
+            "charge_percent_per_minute": None,
             "status_raw": None,
             "version_raw": None,
             "alert_pin_asserted": None,
@@ -258,6 +483,10 @@ class MAX17048FuelGauge:
 
         metrics["voltage_v"] = self.read_cell_voltage_v()
         metrics["soc_percent"] = self.read_soc_percent()
+        self._soc_history.append(metrics["soc_percent"])
+        metrics["charge_percent_per_minute"] = self._record_charge_percentage_per_minute_sample(
+            metrics["soc_percent"]
+        )
         metrics["crate_percent_per_hour"] = self.read_crate_percent_per_hour(record_history=True)
         metrics["crate_smoothed_percent_per_hour"] = self.get_smoothed_crate_percent_per_hour()
         metrics["status_raw"] = float(self.read_status())
