@@ -892,6 +892,14 @@ class DynamicMenu:
         
         if self.boot_screen_active:
             return
+
+        # Battery history is a view-only screen. Rotating should exit the view
+        # and immediately continue as normal menu navigation.
+        if self.edit_mode and self.edit_config.get("type") == "battery_history":
+            self.edit_mode = False
+            self.edit_config = {}
+            with self.refresh_lock:
+                self._refresh_current_menu(preserve_position=True)
         
         if self.edit_mode:
             # Calculate step size based on bar width for brightness_bar mode
