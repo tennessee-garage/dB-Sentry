@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any, Union, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
-from .menu import Menu, MenuItem
+from .menu import Menu, MenuItem, _load_font
 from .max17048_fuel_gauge import MAX17048FuelGauge
 from .oled_display import OledDisplay
 from utils.system_info import (
@@ -43,6 +43,8 @@ class DynamicMenu:
     """Dynamic menu system with navigation, editing, and auto-refresh."""
     
     INACTIVITY_TIMEOUT = 60  # Seconds before display sleeps
+    BATTERY_HISTORY_REFRESH_SECONDS = 60.0
+    BATTERY_BACKGROUND_SAMPLE_SECONDS = 60.0
     
     def __init__(self, display: OledDisplay, config_path: Optional[str] = None, led_controller=None, led_ipc_server=None):
         """Initialize dynamic menu system.
@@ -56,6 +58,7 @@ class DynamicMenu:
         self.display = display
         self.led_controller = led_controller
         self.led_ipc_server = led_ipc_server
+        self.menu_font = _load_font()
         
         # Load menu configuration
         config_file: Path
@@ -92,6 +95,7 @@ class DynamicMenu:
         self.last_activity = time.time()
         self.display_sleeping = False
         self.battery_history_last_render: float = 0.0
+        self.battery_background_sample_last: float = 0.0
         
         # Dynamic content cache
         self.dynamic_values: Dict[str, str] = {}
@@ -810,12 +814,23 @@ class DynamicMenu:
         """Background loop for refreshing dynamic menu items."""
         while not self.stop_refresh.is_set():
             try:
+                # Always keep battery histories updated, even when not viewing battery menus.
+                now = time.time()
+                if (now - self.battery_background_sample_last) >= self.BATTERY_BACKGROUND_SAMPLE_SECONDS:
+                    try:
+                        self.battery_metrics_cache = self.battery_gauge.read_metrics()
+                        self.battery_metrics_cache_time = now
+                    except Exception as sample_error:
+                        logger.debug("Battery background sample failed: %s", sample_error)
+                    finally:
+                        self.battery_background_sample_last = now
+
                 # Check for display sleep
                 self._check_sleep()
                 
                 if not self.display_sleeping:
                     if self.edit_mode and self.edit_config.get("type") == "battery_history":
-                        if (time.time() - self.battery_history_last_render) >= 1.0:
+                        if (time.time() - self.battery_history_last_render) >= self.BATTERY_HISTORY_REFRESH_SECONDS:
                             self._render_battery_history_graph()
                             self.battery_history_last_render = time.time()
                     elif not self.edit_mode:
@@ -1330,8 +1345,7 @@ class DynamicMenu:
 
         latest_soc = metrics.get("soc_percent")
         latest_soc_text = "n/a" if latest_soc is None else f"{latest_soc:.1f}%"
-        draw.text((0, 0), f"Hist {latest_soc_text}", fill=1)
-        draw.text((104, 0), "100", fill=1)
+        draw.text((0, 0), f"Hist {latest_soc_text}", fill=1, font=self.menu_font)
 
         points = self.battery_gauge.get_soc_history_plot_points(
             graph_x=0,
@@ -1341,8 +1355,6 @@ class DynamicMenu:
             min_percent=0.0,
             max_percent=100.0,
         )
-
-        draw.text((118, height - 8), "0", fill=1)
 
         if len(points) >= 2:
             draw.line(points, fill=1)
