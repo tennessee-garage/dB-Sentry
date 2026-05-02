@@ -289,7 +289,9 @@ class DynamicMenu:
         """Get formatted estimated battery runtime for the status menu."""
         metrics = self._get_battery_metrics()
         soc_percent = metrics.get("soc_percent")
-        rate = metrics.get("crate_percent_per_hour")
+        rate = metrics.get("crate_smoothed_percent_per_hour")
+        if rate is None:
+            rate = metrics.get("crate_percent_per_hour")
         if soc_percent is None or rate is None:
             return "n/a"
         estimate = self.battery_gauge.estimate_time_remaining(soc_percent, rate)

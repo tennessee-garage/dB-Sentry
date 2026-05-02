@@ -6,8 +6,9 @@ metrics from a MAX17048 (or MAX17049-compatible) fuel gauge.
 
 from __future__ import annotations
 
+from collections import deque
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Deque, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +52,18 @@ class MAX17048FuelGauge:
         address: int = DEFAULT_I2C_ADDRESS,
         alert_pin: Optional[int] = 4,
         use_alert_gpio: bool = True,
+        discharge_rate_window_size: int = 30,
     ) -> None:
         self.bus_number = bus_number
         self.address = address
         self.alert_pin = alert_pin
         self.use_alert_gpio = use_alert_gpio
+        self.discharge_rate_window_size = max(1, int(discharge_rate_window_size))
 
         self.bus: Optional[Any] = None
         self.alert_button: Optional[Any] = None
         self._init_error: Optional[str] = None
+        self._crate_history: Deque[float] = deque(maxlen=self.discharge_rate_window_size)
 
         self._initialize_bus()
         self._initialize_alert_input()
@@ -126,7 +130,7 @@ class MAX17048FuelGauge:
         raw = self._read_word_be(self.REG_SOC)
         return raw / 256.0
 
-    def read_crate_percent_per_hour(self) -> float:
+    def read_crate_percent_per_hour(self, record_history: bool = True) -> float:
         """Read charge/discharge rate in percent per hour.
 
         CRate is a signed 16-bit value with 0.208 %/hr per LSB.
@@ -134,7 +138,20 @@ class MAX17048FuelGauge:
         """
         raw = self._read_word_be(self.REG_CRATE)
         signed = self._to_signed_16(raw)
-        return signed * 0.208
+        rate = signed * 0.208
+        if record_history:
+            self._crate_history.append(rate)
+        return rate
+
+    def get_smoothed_crate_percent_per_hour(self) -> Optional[float]:
+        """Return rolling-average CRate from recent samples."""
+        if not self._crate_history:
+            return None
+        return sum(self._crate_history) / len(self._crate_history)
+
+    def clear_crate_history(self) -> None:
+        """Clear accumulated CRate history used for smoothing."""
+        self._crate_history.clear()
 
     @staticmethod
     def estimate_time_remaining(
@@ -162,7 +179,7 @@ class MAX17048FuelGauge:
         total_minutes = max(0, int(round(remaining_hours * 60)))
         return total_minutes // 60, total_minutes % 60
 
-    def read_estimated_time_remaining(self) -> Optional[tuple[int, int]]:
+    def read_estimated_time_remaining(self, use_smoothed_rate: bool = True) -> Optional[tuple[int, int]]:
         """Read SOC and CRate, then estimate remaining runtime.
 
         Returns:
@@ -170,7 +187,11 @@ class MAX17048FuelGauge:
             can be produced from the current readings.
         """
         soc_percent = self.read_soc_percent()
-        crate_percent_per_hour = self.read_crate_percent_per_hour()
+        crate_percent_per_hour = self.read_crate_percent_per_hour(record_history=True)
+        if use_smoothed_rate:
+            smoothed_rate = self.get_smoothed_crate_percent_per_hour()
+            if smoothed_rate is not None:
+                crate_percent_per_hour = smoothed_rate
         return self.estimate_time_remaining(soc_percent, crate_percent_per_hour)
 
     @staticmethod
@@ -196,9 +217,14 @@ class MAX17048FuelGauge:
         hours, minutes = time_remaining
         return f"{hours}h{minutes:02d}m"
 
-    def read_estimated_time_remaining_text(self) -> str:
+    def read_estimated_time_remaining_text(self, use_smoothed_rate: bool = True) -> str:
         """Read and format estimated remaining runtime as text."""
-        crate_percent_per_hour = self.read_crate_percent_per_hour()
+        crate_percent_per_hour = self.read_crate_percent_per_hour(record_history=True)
+        if use_smoothed_rate:
+            smoothed_rate = self.get_smoothed_crate_percent_per_hour()
+            if smoothed_rate is not None:
+                crate_percent_per_hour = smoothed_rate
+
         return self.format_time_remaining(
             self.estimate_time_remaining(self.read_soc_percent(), crate_percent_per_hour),
             crate_percent_per_hour=crate_percent_per_hour,
@@ -224,6 +250,7 @@ class MAX17048FuelGauge:
             "voltage_v": None,
             "soc_percent": None,
             "crate_percent_per_hour": None,
+            "crate_smoothed_percent_per_hour": None,
             "status_raw": None,
             "version_raw": None,
             "alert_pin_asserted": None,
@@ -231,7 +258,8 @@ class MAX17048FuelGauge:
 
         metrics["voltage_v"] = self.read_cell_voltage_v()
         metrics["soc_percent"] = self.read_soc_percent()
-        metrics["crate_percent_per_hour"] = self.read_crate_percent_per_hour()
+        metrics["crate_percent_per_hour"] = self.read_crate_percent_per_hour(record_history=True)
+        metrics["crate_smoothed_percent_per_hour"] = self.get_smoothed_crate_percent_per_hour()
         metrics["status_raw"] = float(self.read_status())
         metrics["version_raw"] = float(self.read_version())
 
