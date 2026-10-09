@@ -22,9 +22,9 @@ const int I2S_WS_PIN  = D2;   // LRCLK / WS
 const int I2S_SCK_PIN = D1;   // BCLK / SCK
 const int I2S_SD_PIN  = D0;   // SD (data from mic)
 
-const int LED_STATUS_PIN = D3;  // On-board LED
-const int LED_DATA_PIN   = D5;  // Additional LED for data activity
-const int LED_ALERT_PIN  = D4;  // Additional LED for alerts
+const int LED_STATUS_PIN = D3;  // GREEN - LED for general status (WiFi, etc.)
+const int LED_DATA_PIN   = D5;  // BLUE - LED for data activity
+const int LED_ALERT_PIN  = D4;  // RED - LED for alerts
 
 // ---------- OBJECTS ----------
 
