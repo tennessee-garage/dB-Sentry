@@ -1,6 +1,7 @@
 from typing import Dict, List
 from config import cfg
 import logging
+import time
 
 from influxdb import InfluxDBClient as V1Client
 from influxdb.resultset import ResultSet
@@ -21,6 +22,23 @@ class InfluxV1Client:
 		
 		if self.client is None:
 			raise RuntimeError("Could not connect to influxdb")
+
+	def wait_until_ready(self, timeout: float = 120):
+		"""Block until InfluxDB answers a ping, or timeout seconds pass.
+
+		At boot this service starts in parallel with influxdb rather than after it,
+		so the server may not be up yet when we first read settings.
+		"""
+		deadline = time.monotonic() + timeout
+		while True:
+			try:
+				self.client.ping()
+				return
+			except Exception:
+				if time.monotonic() > deadline:
+					logger.warning("InfluxDB not ready after %ss; continuing anyway", timeout)
+					return
+				time.sleep(0.25)
 
 	def read_active_sensors(self) -> List[str]:
 		"""Find the currently active sensors from the InfluxDB."""
@@ -103,6 +121,10 @@ class NoopInfluxClient:
 		self._sensor_limits: Dict[str, int] = {}
 		# default window seconds
 		self._window_seconds: int = 30
+
+	def wait_until_ready(self, timeout: float = 120):
+		"""Noop client is always ready."""
+		pass
 
 	def read_active_sensors(self) -> List[str]:
 		"""Find the currently active sensors from the InfluxDB."""

@@ -45,10 +45,13 @@ class MQTTService:
                 logger.exception("message_callback raised")
 
     def start(self):
-        self.client.connect(cfg.mqtt_broker, cfg.mqtt_port, 60)
+        # Connect asynchronously and keep retrying: at boot the broker may not be
+        # up yet, since this service no longer waits for mosquitto to start.
+        self.client.reconnect_delay_set(min_delay=1, max_delay=5)
+        self.client.connect_async(cfg.mqtt_broker, cfg.mqtt_port, 60)
         self._running = True
         # Use a background thread for the loop
-        t = Thread(target=self.client.loop_forever, daemon=True)
+        t = Thread(target=self.client.loop_forever, kwargs={'retry_first_connection': True}, daemon=True)
         t.start()
 
     def stop(self):

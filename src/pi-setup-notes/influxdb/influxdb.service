@@ -1,0 +1,23 @@
+# Full override of the packaged unit, installed to /etc/systemd/system/influxdb.service.
+# Differences from /usr/lib/systemd/system/influxdb.service:
+#  - No After=network-online.target: influxd only needs local sockets, and waiting on
+#    NetworkManager-wait-online delayed it by ~6-8s at boot.
+#  - ExecStart uses influxd-fast-start.sh (skips the unused TSI rebuild).
+[Unit]
+Description=InfluxDB is an open-source, distributed, time series database
+Documentation=https://docs.influxdata.com/influxdb/
+
+[Service]
+User=influxdb
+Group=influxdb
+LimitNOFILE=65536
+EnvironmentFile=-/etc/default/influxdb
+ExecStart=/usr/local/lib/influxdb/influxd-fast-start.sh
+KillMode=control-group
+Restart=on-failure
+Type=forking
+PIDFile=/var/lib/influxdb/influxd.pid
+
+[Install]
+WantedBy=multi-user.target
+Alias=influxd.service
