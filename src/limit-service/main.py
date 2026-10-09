@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('limit-service')
 
 influx = create_influx_client()
+influx.wait_until_ready()
 
 # Events to signal when configuration has changed
 limits_changed_event = threading.Event()

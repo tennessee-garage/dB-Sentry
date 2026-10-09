@@ -1,7 +1,9 @@
 [Unit]
 Description=dB-Sentry Limit Service
-After=network.target mosquitto.service influxdb.service
-Wants=network.target
+# Not ordered After= influxdb/mosquitto: starting in parallel lets our slow Python
+# imports overlap their startup. main.py waits for InfluxDB and the MQTT client
+# retries until the broker is up.
+Wants=network.target mosquitto.service influxdb.service
 
 [Service]
 Type=simple
